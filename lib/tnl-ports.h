@@ -32,6 +32,12 @@ void tnl_port_map_insert(odp_port_t, ovs_be16 tp_port,
 void tnl_port_map_delete(odp_port_t, const char type[]);
 void tnl_port_map_insert_ipdev(const char dev[]);
 void tnl_port_map_delete_ipdev(const char dev[]);
+void tnl_port_map_insert_by_ip(odp_port_t port, struct eth_addr mac,
+        struct in6_addr *addr, ovs_be16 tp_port, const char dev_name[],
+        const char type[]);
+void tnl_port_map_delete_by_ip(odp_port_t port, struct eth_addr mac,
+        struct in6_addr *addr, ovs_be16 tp_port, const char type[]);
+
 void tnl_port_map_run(void);
 
 void tnl_port_map_init(void);

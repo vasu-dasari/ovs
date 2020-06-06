@@ -49,6 +49,8 @@ struct tnl_match {
     bool in_key_flow;
     bool ip_src_flow;
     bool ip_dst_flow;
+    odp_port_t out_odp_port;
+    ovs_be16 vlan_id;
     enum netdev_pt_mode pt_mode;
 };
 
@@ -171,6 +173,10 @@ tnl_port_add__(const struct ofport_dpif *ofport, const struct netdev *netdev,
     tnl_port->match.ip_dst_flow = cfg->ip_dst_flow;
     tnl_port->match.in_key_flow = cfg->in_key_flow;
     tnl_port->match.odp_port = odp_port;
+    if (cfg->out_port_name) {
+        tnl_port->match.out_odp_port = odp_port_by_name(cfg->out_port_name);
+    }
+    tnl_port->match.vlan_id = cfg->vlan_id;
     tnl_port->match.pt_mode = netdev_get_pt_mode(netdev);
 
     map = tnl_match_map(&tnl_port->match);
@@ -202,8 +208,14 @@ tnl_port_add__(const struct ofport_dpif *ofport, const struct netdev *netdev,
         const char *type;
 
         type = netdev_get_type(netdev);
-        tnl_port_map_insert(odp_port, cfg->dst_port, name, type);
-
+        /* If user specified entire L2 and L3 encap parameters then program the
+         * tnl_port_map with the information user provided */
+        if (!tnl_port->match.out_odp_port) {
+            tnl_port_map_insert(odp_port, cfg->dst_port, name, type);
+        } else {
+            tnl_port_map_insert_by_ip(odp_port, cfg->src_mac,
+                    &tnl_port->match.ipv6_src, cfg->dst_port, name, type);
+        }
     }
     return true;
 }
@@ -271,9 +283,20 @@ tnl_port_del__(const struct ofport_dpif *ofport, odp_port_t odp_port)
 
     tnl_port = tnl_find_ofport(ofport);
     if (tnl_port) {
+        const struct netdev_tunnel_config *cfg;
         struct hmap **map;
+        const char *type;
 
-        tnl_port_map_delete(odp_port, netdev_get_type(tnl_port->netdev));
+        cfg = netdev_get_tunnel_config(tnl_port->netdev);
+
+        type = netdev_get_type(tnl_port->netdev);
+
+        if (tnl_port->match.out_odp_port) {
+            tnl_port_map_delete_by_ip(odp_port, cfg->src_mac,
+                    &tnl_port->match.ipv6_src, cfg->dst_port, type);
+        } else {
+            tnl_port_map_delete(odp_port, type);
+        }
         tnl_port_mod_log(tnl_port, "removing");
         map = tnl_match_map(&tnl_port->match);
         hmap_remove(*map, &tnl_port->match_node);
@@ -488,6 +511,23 @@ tnl_port_send(const struct ofport_dpif *ofport, struct flow *flow,
         flow->tunnel.erspan_hwid = cfg->erspan_hwid;
     }
 
+    if (tnl_port->match.out_odp_port) {
+        flow->tunnel.out_odp_port = tnl_port->match.out_odp_port;
+
+        if (!eth_addr_is_zero(cfg->src_mac)) {
+            flow->tunnel.src_mac = cfg->src_mac;
+        }
+        if (!eth_addr_is_zero(cfg->dst_mac)) {
+            flow->tunnel.dst_mac = cfg->dst_mac;
+        }
+        flow->tunnel.vlan_id = cfg->vlan_id;
+    } else {
+        flow->tunnel.out_odp_port = 0;
+        memset(&flow->tunnel.src_mac, 0, sizeof(flow->tunnel.src_mac));
+        memset(&flow->tunnel.dst_mac, 0, sizeof(flow->tunnel.dst_mac));
+        flow->tunnel.vlan_id = 0;
+    }
+
     if (pre_flow_str) {
         char *post_flow_str = flow_to_string(flow, NULL);
         char *tnl_str = tnl_port_to_string(tnl_port);
@@ -551,6 +591,7 @@ tnl_find(const struct flow *flow) OVS_REQ_RDLOCK(rwlock)
     enum ip_src_type ip_src;
     int in_key_flow;
     int ip_dst_flow;
+    int out_port_flow;
     int i;
 
     i = 0;
@@ -582,22 +623,35 @@ tnl_find(const struct flow *flow) OVS_REQ_RDLOCK(rwlock)
                     match.ip_dst_flow = ip_dst_flow;
                     match.ip_src_flow = ip_src == IP_SRC_FLOW;
 
-                    /* Look for a legacy L2 or L3 tunnel port first. */
-                    if (pt_ns(flow->packet_type) == OFPHTN_ETHERTYPE) {
-                        match.pt_mode = NETDEV_PT_LEGACY_L3;
-                    } else {
-                        match.pt_mode = NETDEV_PT_LEGACY_L2;
-                    }
-                    tnl_port = tnl_find_exact(&match, map);
-                    if (tnl_port) {
-                        return tnl_port;
-                    }
+                    /* If flow_tnl has out_odp_port configured then tnl_port
+                     * could be with out_odp_port configured or one without
+                     * that. If it is not setup then just make one loop
+                     */
+                    for (out_port_flow = 0;
+                            out_port_flow <
+                                (flow->tunnel.out_odp_port ? 2 : 1);
+                            out_port_flow++) {
+                        if (out_port_flow) {
+                            match.out_odp_port = flow->tunnel.out_odp_port;
+                            match.vlan_id = flow->tunnel.vlan_id;
+                        }
+                        /* Look for a legacy L2 or L3 tunnel port first. */
+                        if (pt_ns(flow->packet_type) == OFPHTN_ETHERTYPE) {
+                            match.pt_mode = NETDEV_PT_LEGACY_L3;
+                        } else {
+                            match.pt_mode = NETDEV_PT_LEGACY_L2;
+                        }
+                        tnl_port = tnl_find_exact(&match, map);
+                        if (tnl_port) {
+                            return tnl_port;
+                        }
 
-                    /* Then check for a packet type aware port. */
-                    match.pt_mode = NETDEV_PT_AWARE;
-                    tnl_port = tnl_find_exact(&match, map);
-                    if (tnl_port) {
-                        return tnl_port;
+                        /* Then check for a packet type aware port. */
+                        match.pt_mode = NETDEV_PT_AWARE;
+                        tnl_port = tnl_find_exact(&match, map);
+                        if (tnl_port) {
+                            return tnl_port;
+                        }
                     }
                 }
 
@@ -649,6 +703,12 @@ tnl_match_fmt(const struct tnl_match *match, struct ds *ds)
            : match->pt_mode == NETDEV_PT_LEGACY_L3 ? "legacy_l3"
            : "ptap");
     ds_put_format(ds, ", %s, dp port=%"PRIu32, pt_mode, match->odp_port);
+    if (match->vlan_id) {
+        ds_put_format(ds, ", vlan_id=%#"PRIx16, match->vlan_id);
+    }
+    if (match->out_odp_port) {
+        ds_put_format(ds, ", out_port=%"PRIu32, match->out_odp_port);
+    }
 }
 
 static void
