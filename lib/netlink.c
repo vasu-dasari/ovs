@@ -714,6 +714,15 @@ nl_attr_get_in6_addr(const struct nlattr *nla)
     return NL_ATTR_GET_AS(nla, struct in6_addr);
 }
 
+/* Returns the Ethernet address value in 'nla''s payload.
+ *
+ * Asserts that 'nla''s payload is at least 6 bytes long. */
+struct eth_addr
+nl_attr_get_eth_addr(const struct nlattr *nla)
+{
+    return NL_ATTR_GET_AS(nla, struct eth_addr);
+}
+
 /* Returns the 32-bit odp_port_t value in 'nla''s payload.
  *
  * Asserts that 'nla''s payload is at least 4 bytes long. */
