@@ -396,6 +396,10 @@ struct xlate_ctx {
      * state from the datapath should be honored after thawing. */
     bool conntracked;
 
+    /* The egress port that needs to be used regardless of what mac-learning
+     * module may or not have Mac entry */
+    odp_port_t out_odp_port;
+
     /* Pointer to an embedded NAT action in a conntrack action, or NULL. */
     struct ofpact_nat *ct_nat_action;
 
@@ -1866,6 +1870,14 @@ ofp_port_to_odp_port(const struct xbridge *xbridge, ofp_port_t ofp_port)
     return xport ? xport->odp_port : ODPP_NONE;
 }
 
+static ofp_port_t
+odp_port_to_ofp_port(const struct xlate_ctx *ctx, odp_port_t odp_port)
+{
+    struct xport *xport = xport_lookup(ctx->xcfg,
+            odp_port_to_ofport(ctx->xbridge->ofproto->backer, odp_port));
+    return xport ? xport->ofp_port : OFPP_NONE;
+}
+
 static bool
 odp_port_is_alive(const struct xlate_ctx *ctx, ofp_port_t ofp_port)
 {
@@ -3033,7 +3045,22 @@ xlate_normal(struct xlate_ctx *ctx)
     }
 
     /* Determine output bundle. */
-    if (mcast_snooping_enabled(ctx->xbridge->ms)
+    if (ctx->out_odp_port) {
+        struct xbundle *out_xbundle;
+        struct xport *out_port;
+
+        if ((out_xbundle = lookup_input_bundle(ctx,
+                        odp_port_to_ofp_port(ctx, ctx->out_odp_port),
+                        &out_port))) {
+            xlate_report(ctx, OFT_DETAIL, "forwarding to chosen port %s",
+                    netdev_get_name(out_port->netdev));
+            output_normal(ctx, out_xbundle, &xvlan);
+        } else {
+            xlate_report(ctx, OFT_WARN, "chosen port %d not found",
+                    ctx->out_odp_port);
+        }
+        ctx->out_odp_port = 0;
+    } else if (mcast_snooping_enabled(ctx->xbridge->ms)
         && !eth_addr_is_broadcast(flow->dl_dst)
         && eth_addr_is_multicast(flow->dl_dst)
         && is_ip_any(flow)) {
@@ -3413,6 +3440,43 @@ process_special(struct xlate_ctx *ctx, const struct xport *xport)
 }
 
 static int
+get_tnl_spec(struct xlate_ctx *ctx, const struct flow *flow,
+        struct eth_addr *dst_mac, struct eth_addr *src_mac,
+        struct in6_addr *dst_ip, struct in6_addr *src_ip,
+        struct xport **out_dev)
+
+{
+    struct xlate_cfg *xcfg = ovsrcu_get(struct xlate_cfg *, &xcfgp);
+    struct xport *out_xport;
+
+    *src_ip = flow_tnl_src(&flow->tunnel);
+    *dst_ip = flow_tnl_dst(&flow->tunnel);
+    if ( !flow->tunnel.out_odp_port ||
+            !ipv6_addr_is_set(src_ip) ||
+            !ipv6_addr_is_set(dst_ip) ||
+            eth_addr_is_zero(flow->tunnel.src_mac) ||
+            eth_addr_is_zero(flow->tunnel.dst_mac)) {
+        return -ENOENT;
+    }
+
+    *out_dev = NULL;
+
+    out_xport = xport_lookup(xcfg,
+            odp_port_to_ofport(ctx->xbridge->ofproto->backer,
+                flow->tunnel.out_odp_port));
+    if (out_xport) {
+        *out_dev = get_ofp_port(out_xport->xbridge, OFPP_LOCAL);
+        if (!(*out_dev)) {
+            return -ENOENT;
+        }
+    }
+
+    *src_mac = flow->tunnel.src_mac;
+    *dst_mac = flow->tunnel.dst_mac;
+    return 0;
+}
+
+static int
 tnl_route_lookup_flow(const struct xlate_ctx *ctx,
                       const struct flow *oflow,
                       struct in6_addr *ip, struct in6_addr *src,
@@ -3520,6 +3584,9 @@ propagate_tunnel_data_to_flow__(struct flow *dst_flow,
 {
     dst_flow->dl_dst = dmac;
     dst_flow->dl_src = smac;
+    if (src_flow->tunnel.vlan_id) {
+        flow_set_vlan_vid(dst_flow, htons(src_flow->tunnel.vlan_id));
+    }
 
     dst_flow->packet_type = htonl(PT_ETH);
     dst_flow->nw_dst = src_flow->tunnel.ip_dst;
@@ -3626,41 +3693,48 @@ native_tunnel_output(struct xlate_ctx *ctx, const struct xport *xport,
         in6_addr_set_mapped_ipv4(&s_ip6, flow->tunnel.ip_src);
     }
 
-    err = tnl_route_lookup_flow(ctx, flow, &d_ip6, &s_ip6, &out_dev);
-    if (err) {
-        xlate_report(ctx, OFT_WARN, "native tunnel routing failed");
-        return err;
-    }
-
-    xlate_report(ctx, OFT_DETAIL, "tunneling to %s via %s",
-                 ipv6_string_mapped(buf_dip6, &d_ip6),
-                 netdev_get_name(out_dev->netdev));
-
-    /* Use mac addr of bridge port of the peer. */
-    err = netdev_get_etheraddr(out_dev->netdev, &smac);
-    if (err) {
-        xlate_report(ctx, OFT_WARN,
-                     "tunnel output device lacks Ethernet address");
-        return err;
-    }
-
-    d_ip = in6_addr_get_mapped_ipv4(&d_ip6);
-    if (d_ip) {
-        s_ip = in6_addr_get_mapped_ipv4(&s_ip6);
-    }
-
-    err = tnl_neigh_lookup(out_dev->xbridge->name, &d_ip6, &dmac);
-    if (err) {
-        xlate_report(ctx, OFT_DETAIL,
-                     "neighbor cache miss for %s on bridge %s, "
-                     "sending %s request",
-                     buf_dip6, out_dev->xbridge->name, d_ip ? "ARP" : "ND");
-        if (d_ip) {
-            tnl_send_arp_request(ctx, out_dev, smac, s_ip, d_ip);
-        } else {
-            tnl_send_nd_request(ctx, out_dev, smac, &s_ip6, &d_ip6);
+    if (!get_tnl_spec(ctx, flow, &dmac, &smac, &d_ip6, &s_ip6, &out_dev)) {
+        ctx->out_odp_port = flow->tunnel.out_odp_port;
+        xlate_report(ctx, OFT_DETAIL, "tunneling to %s via %s",
+                ipv6_string_mapped(buf_dip6, &d_ip6),
+                netdev_get_name(out_dev->netdev));
+    } else {
+        err = tnl_route_lookup_flow(ctx, flow, &d_ip6, &s_ip6, &out_dev);
+        if (err) {
+            xlate_report(ctx, OFT_WARN, "native tunnel routing failed");
+            return err;
         }
-        return err;
+
+        xlate_report(ctx, OFT_DETAIL, "tunneling to %s via %s",
+                ipv6_string_mapped(buf_dip6, &d_ip6),
+                netdev_get_name(out_dev->netdev));
+
+        /* Use mac addr of bridge port of the peer. */
+        err = netdev_get_etheraddr(out_dev->netdev, &smac);
+        if (err) {
+            xlate_report(ctx, OFT_WARN,
+                    "tunnel output device lacks Ethernet address");
+            return err;
+        }
+
+        d_ip = in6_addr_get_mapped_ipv4(&d_ip6);
+        if (d_ip) {
+            s_ip = in6_addr_get_mapped_ipv4(&s_ip6);
+        }
+
+        err = tnl_neigh_lookup(out_dev->xbridge->name, &d_ip6, &dmac);
+        if (err) {
+            xlate_report(ctx, OFT_DETAIL,
+                    "neighbor cache miss for %s on bridge %s, "
+                    "sending %s request",
+                    buf_dip6, out_dev->xbridge->name, d_ip ? "ARP" : "ND");
+            if (d_ip) {
+                tnl_send_arp_request(ctx, out_dev, smac, s_ip, d_ip);
+            } else {
+                tnl_send_nd_request(ctx, out_dev, smac, &s_ip6, &d_ip6);
+            }
+            return err;
+        }
     }
 
     if (ctx->xin->xcache) {
@@ -3668,14 +3742,14 @@ native_tunnel_output(struct xlate_ctx *ctx, const struct xport *xport,
 
         entry = xlate_cache_add_entry(ctx->xin->xcache, XC_TNL_NEIGH);
         ovs_strlcpy(entry->tnl_neigh_cache.br_name, out_dev->xbridge->name,
-                    sizeof entry->tnl_neigh_cache.br_name);
+                sizeof entry->tnl_neigh_cache.br_name);
         entry->tnl_neigh_cache.d_ipv6 = d_ip6;
     }
 
     xlate_report(ctx, OFT_DETAIL, "tunneling from "ETH_ADDR_FMT" %s"
-                 " to "ETH_ADDR_FMT" %s",
-                 ETH_ADDR_ARGS(smac), ipv6_string_mapped(buf_sip6, &s_ip6),
-                 ETH_ADDR_ARGS(dmac), buf_dip6);
+            " to "ETH_ADDR_FMT" %s",
+            ETH_ADDR_ARGS(smac), ipv6_string_mapped(buf_sip6, &s_ip6),
+            ETH_ADDR_ARGS(dmac), buf_dip6);
 
     netdev_init_tnl_build_header_params(&tnl_params, flow, &s_ip6, dmac, smac);
     err = tnl_port_build_header(xport->ofport, &tnl_push_data, &tnl_params);
@@ -3690,8 +3764,8 @@ native_tunnel_output(struct xlate_ctx *ctx, const struct xport *xport,
      * any more when sending packet to tunnel. */
 
     propagate_tunnel_data_to_flow(ctx, dmac, smac, s_ip6,
-                                  s_ip, tnl_params.is_ipv6,
-                                  tnl_push_data.tnl_type);
+            s_ip, tnl_params.is_ipv6,
+            tnl_push_data.tnl_type);
 
     size_t clone_ofs = 0;
     size_t push_action_size;
@@ -7515,6 +7589,8 @@ xlate_actions(struct xlate_in *xin, struct xlate_out *xout)
         .conntracked = false,
 
         .ct_nat_action = NULL,
+
+        .out_odp_port = 0,
 
         .action_set_has_group = false,
         .action_set = OFPBUF_STUB_INITIALIZER(action_set_stub),

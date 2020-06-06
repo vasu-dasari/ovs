@@ -211,6 +211,7 @@ ovs_be32 nl_attr_get_be32(const struct nlattr *);
 ovs_be64 nl_attr_get_be64(const struct nlattr *);
 ovs_be128 nl_attr_get_be128(const struct nlattr *);
 struct in6_addr nl_attr_get_in6_addr(const struct nlattr *nla);
+struct eth_addr nl_attr_get_eth_addr(const struct nlattr *nla);
 odp_port_t nl_attr_get_odp_port(const struct nlattr *);
 const char *nl_attr_get_string(const struct nlattr *);
 void nl_attr_get_nested(const struct nlattr *, struct ofpbuf *);
