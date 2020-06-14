@@ -6,11 +6,14 @@ ARG KERNEL_VERSION
 ARG GITHUB_SRC
 ARG DISTRO
 
-copy $DISTRO/build-kernel-modules.sh /build-kernel-modules.sh
+COPY $DISTRO/build-kernel-modules.sh /build-kernel-modules.sh
 RUN /build-kernel-modules.sh $KERNEL_VERSION $OVS_BRANCH $GITHUB_SRC
 
 COPY create_ovs_db.sh /etc/openvswitch/create_ovs_db.sh
 RUN /etc/openvswitch/create_ovs_db.sh
+
+ADD ovs-ctl /usr/share/openvswitch/scripts/
+ADD ovs.alias /root/.bashrc
 
 COPY ovs-override.conf /etc/depmod.d/openvswitch.conf
 

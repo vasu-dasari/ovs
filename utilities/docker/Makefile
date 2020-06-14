@@ -1,9 +1,10 @@
-#export OVS_BRANCH=branch-2.11
-#export OVS_VERSION=2.11
-#export KERNEL_VERSION=4.15.0-54-generic
-#export DISTRO=debian
-#export GITHUB_SRC=https://github.com/openvswitch/ovs.git
-#export DOCKER_REPO=openvswitch/ovs
+export OVS_BRANCH=cello
+export OVS_VERSION=cello
+# export KERNEL_VERSION=5.3.0-51-generic
+export KERNEL_VERSION=host
+export DISTRO=debian
+export GITHUB_SRC=https://github.com/vasu-dasari/ovs.git
+export DOCKER_REPO=vdasari/ovs
 
 # Example:
 #   make build

@@ -1,0 +1,38 @@
+
+### OVS Aliases ###
+alias watch='watch '
+
+alias ovs.novh='nova hypervisor-list'
+alias ovs.novm='nova-manage service list'
+
+alias ovs.logs="sudo journalctl -n 300 --no-pager"
+alias ovs.ologs="tail -n 300 /var/log/openvswitch/ovs-vswitchd.log"
+alias ovs.vsh="sudo virsh list"
+
+alias ovs.ovsd='sudo ovsdb-client dump'
+
+alias ovs.vs='sudo ovs-vsctl '
+alias ovs.vs.show='ovs.vs show'
+
+alias ovs.ap="sudo ovs-appctl "
+alias ovs.ap.fdb="ovs.ap fdb/show "
+alias ovs.ap.lsflows="ovs.ap bridge/dump-flows --sort "
+alias ovs.ap.ifshow="ovs.ap dpif/show "
+alias ovs.ap.tnlarpshow="ovs.ap tnl/arp/show "
+alias ovs.ap.tnlportsshow="ovs.ap tnl/ports/show "
+
+alias ovs.of='sudo ovs-ofctl -O OpenFlow14 '
+alias ovs.of.show='ovs.of show '
+alias ovs.of.rmflow="ovs.of del-flows "
+alias ovs.of.lsflows="ovs.of dump-flows --name"
+alias ovs.of.lsports="ovs.of dump-ports "
+
+alias ovs.dp="sudo ovs-dpctl "
+alias ovs.dp.lsflows="ovs.dp dump-flows "
+alias ovs.dp.show='ovs.dp show'
+
+alias ovs.lsof6='lsof -P -iTCP -sTCP:LISTEN | grep 66'
+alias ovs.vsh="sudo virsh list"
+alias ovs.ns="sudo ip netns exec "
+
+alias sudo=""

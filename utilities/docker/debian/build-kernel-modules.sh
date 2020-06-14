@@ -17,7 +17,7 @@ OVS_BRANCH=$2
 GITHUB_SRC=$3
 
 # Install deps
-build_deps="apt-utils libelf-dev build-essential libssl-dev python3 \
+build_deps="apt-utils libelf-dev build-essential libssl-dev python3 python-six \
 wget gdb autoconf libtool git automake bzip2 debhelper dh-autoreconf openssl"
 
 apt-get update
@@ -46,11 +46,12 @@ else
     eval $config$withlinux
 fi
 
-make -j8; make install; make modules_install
+make -j8; make install; make modules_install;
+make install-openflowincludeHEADERS; make install-openvswitchincludeHEADERS
 
 # remove deps to make the container light weight.
 apt-get remove --purge -y ${build_deps}
 apt-get autoremove -y --purge
 cd ..; rm -rf ovs
-basic_utils="vim kmod net-tools uuid-runtime iproute2"
+basic_utils="vim kmod net-tools uuid-runtime iproute2 iputils-ping tcpdump"
 apt-get install -y ${basic_utils}

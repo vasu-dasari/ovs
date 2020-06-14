@@ -45,5 +45,8 @@ case $1 in
                              -vsyslog:err -vfile:info --mlockall --no-chdir \
                              --log-file=/var/log/openvswitch/ovs-vswitchd.log
         ;;
-        *) echo "$0 [ovsdb-server|ovs-vswitchd|ovs-vswitchd-host]"
+        "start-userspace") /usr/share/openvswitch/scripts/ovs-ctl --ovs-userspace=yes start
+                            sleep infinity
+        ;;
+        *) echo "$0 [ovsdb-server|ovs-vswitchd|ovs-vswitchd-host|start-userspace]"
 esac
