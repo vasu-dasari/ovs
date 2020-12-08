@@ -785,3 +785,53 @@ AT_CHECK([sort ovs-fp0.pcap.txt], [0], [dnl
 
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
+
+AT_SETUP([datapath - nirvana])
+OVS_CHECK_VXLAN()
+
+OVS_TRAFFIC_VSWITCHD_START()
+
+AT_CHECK([ovs-vsctl set-controller br0  tcp:172.16.246.1:6654])
+AT_CHECK([ovs-vsctl set-manager ptcp:6640])
+AT_CHECK([ovs-appctl -t ovsdb-server ovsdb-server/add-remote db:Open_vSwitch,Open_vSwitch,manager_options])
+
+ADD_NAMESPACES(at_fp0, at_ap0)
+
+AT_CHECK([ip link set dev br0 down])
+dnl AT_CHECK([ip addr add dev br0 "172.31.1.100/24"])
+dnl AT_CHECK([ip link set dev br0 address 00:00:00:00:00:01])
+AT_CHECK([ovs-vsctl set bridge br0  other-config:hwaddr="00:00:00:00:00:01"])
+AT_CHECK([ip link set dev br0 up])
+
+ADD_VETH(ap0, at_ap0, br0, "10.1.1.100/24", "00:00:10:01:01:64")
+ADD_VLAN(ap0, at_ap0, 100, "10.1.10.100/24")
+ADD_VLAN(ap0, at_ap0, 200, "10.1.20.100/24")
+ADD_VLAN(ap0, at_ap0, 300, "10.1.30.100/24")
+
+ADD_VETH(fp0, at_fp0, br0, "1.2.1.2/24", "00:00:00:31:01:01")
+ADD_VLAN(fp0, at_fp0, 4050, "172.31.1.1/24")
+ADD_VLAN(fp0, at_fp0, 300, "10.1.30.1/24")
+
+ADD_NATIVE_TUNNEL([vxlan], [at_vxlan_1], [at_fp0], [172.31.1.100], [10.1.1.1/24],
+                          [id 1 dstport 4789], [address "00:00:10:01:01:01"])
+ADD_NATIVE_TUNNEL([vxlan], [at_vxlan_100], [at_fp0], [172.31.1.100], [10.1.10.1/24],
+                          [id 1000 dstport 4789], [address "00:00:10:01:01:01"])
+ADD_NATIVE_TUNNEL([vxlan], [at_vxlan_200], [at_fp0], [172.31.1.100], [10.1.20.1/24],
+                          [id 2000 dstport 4789], [address "00:00:10:01:01:01"])
+NS_CHECK_EXEC([at_fp0], [arp -s 172.31.1.100 00:00:00:00:00:01])
+
+AT_CHECK([ovs-vsctl set port ovs-fp0 vlan_mode=dot1q-tunnel trunks=4050])
+ADD_OVS_TUNNEL_WITH_L2([vxlan], [br0], [at_vxlan0], [flow], [172.31.1.1], [172.31.1.100],
+                        [00:00:00:31:01:01], [00:00:00:00:00:01], ["ovs-fp0"], [4050])
+AT_CHECK("vasu break")
+
+dnl Verify
+NS_CHECK_EXEC([at_ap0], [ping -q -c 3 -i 0.3 -w 2 10.1.1.1 | FORMAT_PING], [0], [dnl
+3 packets transmitted, 3 received, 0% packet loss, time 0ms
+])
+NS_CHECK_EXEC([at_fp0], [ping -q -c 3 -i 0.3 -w 2 10.1.1.100 | FORMAT_PING], [0], [dnl
+3 packets transmitted, 3 received, 0% packet loss, time 0ms
+])
+
+OVS_TRAFFIC_VSWITCHD_STOP
+AT_CLEANUP
