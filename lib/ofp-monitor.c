@@ -386,14 +386,16 @@ ofputil_decode_flow_monitor_request(struct ofputil_flow_monitor_request *rq,
 
 void
 ofputil_append_flow_monitor_request(
-    const struct ofputil_flow_monitor_request *rq, struct ofpbuf *msg)
+    const struct ofputil_flow_monitor_request *rq, struct ofpbuf *msg,
+    enum ofputil_protocol protocol)
 {
     struct nx_flow_monitor_request *nfmr;
     size_t start_ofs;
     int match_len;
+    enum ofp_version version = ofputil_protocol_to_ofp_version(protocol);
 
     if (!msg->size) {
-        ofpraw_put(OFPRAW_NXST_FLOW_MONITOR_REQUEST, OFP10_VERSION, msg);
+        ofpraw_put(OFPRAW_NXST_FLOW_MONITOR_REQUEST, version, msg);
     }
 
     start_ofs = msg->size;
@@ -517,9 +519,6 @@ parse_flow_monitor_request__(struct ofputil_flow_monitor_request *fmr,
         if (error) {
             return error;
         }
-        /* Flow Monitor is supported in OpenFlow 1.0 or can be further reduced
-         * to a few 1.0 flavors by a match field. */
-        *usable_protocols &= OFPUTIL_P_OF10_ANY;
     }
     return NULL;
 }
@@ -673,11 +672,13 @@ ofputil_encode_flow_monitor_cancel(uint32_t id)
 }
 
 void
-ofputil_start_flow_update(struct ovs_list *replies)
+ofputil_start_flow_update(struct ovs_list *replies,
+                          enum ofputil_protocol protocol)
 {
     struct ofpbuf *msg;
+    enum ofp_version version = ofputil_protocol_to_ofp_version(protocol);
 
-    msg = ofpraw_alloc_xid(OFPRAW_NXST_FLOW_MONITOR_REPLY, OFP10_VERSION,
+    msg = ofpraw_alloc_xid(OFPRAW_NXST_FLOW_MONITOR_REPLY, version,
                            htonl(0), 1024);
 
     ovs_list_init(replies);

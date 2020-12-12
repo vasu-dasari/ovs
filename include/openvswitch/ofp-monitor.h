@@ -70,7 +70,8 @@ struct ofputil_flow_monitor_request {
 int ofputil_decode_flow_monitor_request(struct ofputil_flow_monitor_request *,
                                         struct ofpbuf *msg);
 void ofputil_append_flow_monitor_request(
-    const struct ofputil_flow_monitor_request *, struct ofpbuf *msg);
+    const struct ofputil_flow_monitor_request *, struct ofpbuf *msg,
+    enum ofputil_protocol protocol);
 void ofputil_flow_monitor_request_format(
     struct ds *, const struct ofputil_flow_monitor_request *,
     const struct ofputil_port_map *, const struct ofputil_table_map *);
@@ -103,7 +104,8 @@ struct ofputil_flow_update {
 
 int ofputil_decode_flow_update(struct ofputil_flow_update *,
                                struct ofpbuf *msg, struct ofpbuf *ofpacts);
-void ofputil_start_flow_update(struct ovs_list *replies);
+void ofputil_start_flow_update(struct ovs_list *replies,
+                               enum ofputil_protocol protocol);
 void ofputil_append_flow_update(const struct ofputil_flow_update *,
                                 struct ovs_list *replies,
                                 const struct tun_table *);

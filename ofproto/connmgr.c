@@ -2193,7 +2193,8 @@ ofmonitor_report(struct connmgr *mgr, struct rule *rule,
 
         if (flags) {
             if (ovs_list_is_empty(&ofconn->updates)) {
-                ofputil_start_flow_update(&ofconn->updates);
+                ofputil_start_flow_update(&ofconn->updates,
+                                          ofconn_get_protocol(ofconn));
                 ofconn->sent_abbrev_update = false;
             }
 
@@ -2280,7 +2281,8 @@ ofmonitor_resume(struct ofconn *ofconn)
     }
 
     struct ovs_list msgs = OVS_LIST_INITIALIZER(&msgs);
-    ofmonitor_compose_refresh_updates(&rules, &msgs);
+    ofmonitor_compose_refresh_updates(&rules, &msgs,
+                                      ofconn_get_protocol(ofconn));
 
     struct ofpbuf *resumed = ofpraw_alloc_xid(OFPRAW_NXT_FLOW_MONITOR_RESUMED,
                                               OFP10_VERSION, htonl(0), 0);
