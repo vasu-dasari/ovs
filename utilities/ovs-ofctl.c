@@ -2239,6 +2239,7 @@ ofctl_monitor(struct ovs_cmdl_context *ctx)
 {
     struct vconn *vconn;
     int i;
+    enum ofputil_protocol protocol;
     enum ofputil_protocol usable_protocols;
 
     /* If the user wants the invalid_ttl_to_controller feature, limit the
@@ -2263,7 +2264,7 @@ ofctl_monitor(struct ovs_cmdl_context *ctx)
         }
     }
 
-    open_vconn(ctx->argv[1], &vconn);
+    protocol = open_vconn(ctx->argv[1], &vconn);
     bool resume_continuations = false;
     for (i = 2; i < ctx->argc; i++) {
         const char *arg = ctx->argv[i];
@@ -2298,7 +2299,7 @@ ofctl_monitor(struct ovs_cmdl_context *ctx)
             }
 
             msg = ofpbuf_new(0);
-            ofputil_append_flow_monitor_request(&fmr, msg);
+            ofputil_append_flow_monitor_request(&fmr, msg, protocol);
             dump_transaction(vconn, msg);
             fflush(stdout);
         } else if (!strcmp(arg, "resume")) {
