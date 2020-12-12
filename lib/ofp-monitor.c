@@ -660,12 +660,13 @@ ofputil_decode_flow_monitor_cancel(const struct ofp_header *oh)
 }
 
 struct ofpbuf *
-ofputil_encode_flow_monitor_cancel(uint32_t id)
+ofputil_encode_flow_monitor_cancel(uint32_t id, enum ofputil_protocol protocol)
 {
     struct nx_flow_monitor_cancel *nfmc;
+    enum ofp_version version = ofputil_protocol_to_ofp_version(protocol);
     struct ofpbuf *msg;
 
-    msg = ofpraw_alloc(OFPRAW_NXT_FLOW_MONITOR_CANCEL, OFP10_VERSION, 0);
+    msg = ofpraw_alloc(OFPRAW_NXT_FLOW_MONITOR_CANCEL, version, 0);
     nfmc = ofpbuf_put_uninit(msg, sizeof *nfmc);
     nfmc->id = htonl(id);
     return msg;

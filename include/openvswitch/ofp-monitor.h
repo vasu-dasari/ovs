@@ -116,7 +116,8 @@ void ofputil_flow_update_format(struct ds *,
 
 /* Abstract nx_flow_monitor_cancel. */
 uint32_t ofputil_decode_flow_monitor_cancel(const struct ofp_header *);
-struct ofpbuf *ofputil_encode_flow_monitor_cancel(uint32_t id);
+struct ofpbuf *ofputil_encode_flow_monitor_cancel(
+    uint32_t id, enum ofputil_protocol protocol);
 
 struct ofputil_requestforward {
     ovs_be32 xid;
