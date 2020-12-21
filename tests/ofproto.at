@@ -4911,6 +4911,7 @@ NXT_FLOW_MONITOR_RESUMED:
 OVS_VSWITCHD_STOP
 AT_CLEANUP
 
+# Test to show flow monitoring support on different OpenFlow protocols
 AT_SETUP([ofproto - flow monitoring usable protocols])
 AT_KEYWORDS([monitor])
 
@@ -4920,14 +4921,22 @@ on_exit 'kill `cat ovs-ofctl.pid`'
 ovs-ofctl -OOpenFlow14 monitor br0 watch:udp,udp_dst=8 --detach --no-chdir --pidfile >monitor.log 2>&1
 AT_CAPTURE_FILE([monitor.log])
 
-# ovs-ofctl should exit because monitor is not supported in OpenFlow 1.4
-OVS_WAIT_UNTIL([grep "ovs-ofctl: none of the usable flow formats (OpenFlow10,NXM) is among the allowed flow formats (OXM-OpenFlow14)" monitor.log])
+# Wait till reply comes backs with OF 1.4
+OVS_WAIT_UNTIL([grep "NXST_FLOW_MONITOR reply (OF1.4)" monitor.log])
+ovs-appctl -t ovs-ofctl exit
 
-# check that only NXM flag is returned as usable protocols for sctp_dst
-# and ovs-ofctl should exit since monitor is not supported in OpenFlow 1.4
-ovs-ofctl -OOpenFlow14 monitor br0 watch:sctp,sctp_dst=9 --detach --no-chdir --pidfile >monitor.log 2>&1
-OVS_WAIT_UNTIL([grep "ovs-ofctl: none of the usable flow formats (NXM) is among the allowed flow formats (OXM-OpenFlow14)" monitor.log])
+# Make sure protocol type in messages from vswitchd, matches that of requested protocol
+ovs-ofctl -OOpenFlow13 monitor br0 watch:sctp,sctp_dst=9 --detach --no-chdir --pidfile >monitor.log 2>&1
+ovs-ofctl add-flow br0 sctp,sctp_dst=9,action=normal
 
+OVS_WAIT_UNTIL([grep "event=ADDED " monitor.log])
+AT_CHECK([sed 's/ (xid=0x[[1-9a-fA-F]][[0-9a-fA-F]]*)//' monitor.log], [0], [dnl
+NXST_FLOW_MONITOR reply (OF1.3):
+NXST_FLOW_MONITOR reply (OF1.3) (xid=0x0):
+ event=ADDED table=0 cookie=0 sctp,tp_dst=9 actions=NORMAL
+])
+
+OVS_APP_EXIT_AND_WAIT([ovs-ofctl])
 OVS_VSWITCHD_STOP
 AT_CLEANUP
 
