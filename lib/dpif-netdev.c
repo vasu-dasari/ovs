@@ -7805,11 +7805,11 @@ dp_execute_cb(void *aux_, struct dp_packet_batch *packets_,
                      * used for classifying packets over fully specified
                      * tunnels */
                     packet->md.tunnel.out_odp_port =
-                        aux->flow->in_port.odp_port;
+                        (OVS_FORCE ovs_be32)(aux->flow->in_port.odp_port);
                     if (aux->flow->vlans[0].tci) {
                         packet->md.tunnel.vlan_id =
-                            vlan_tci_to_vid(aux->flow->vlans[0].tci);
-                    }
+                            vlan_tci_to_vid((OVS_FORCE ovs_be16)(aux->flow->vlans[0].tci));
+                   }
                 }
 
                 (*depth)++;

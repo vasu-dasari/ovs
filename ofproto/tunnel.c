@@ -49,7 +49,7 @@ struct tnl_match {
     bool in_key_flow;
     bool ip_src_flow;
     bool ip_dst_flow;
-    odp_port_t out_odp_port;
+    ovs_be32 out_odp_port;
     ovs_be16 vlan_id;
     enum netdev_pt_mode pt_mode;
 };
@@ -174,9 +174,9 @@ tnl_port_add__(const struct ofport_dpif *ofport, const struct netdev *netdev,
     tnl_port->match.in_key_flow = cfg->in_key_flow;
     tnl_port->match.odp_port = odp_port;
     if (cfg->out_port_name) {
-        tnl_port->match.out_odp_port = odp_port_by_name(cfg->out_port_name);
+        tnl_port->match.out_odp_port = (OVS_FORCE ovs_be32)odp_port_by_name(cfg->out_port_name);
     }
-    tnl_port->match.vlan_id = cfg->vlan_id;
+    tnl_port->match.vlan_id = (OVS_FORCE ovs_be16)cfg->vlan_id;
     tnl_port->match.pt_mode = netdev_get_pt_mode(netdev);
 
     map = tnl_match_map(&tnl_port->match);
@@ -520,7 +520,7 @@ tnl_port_send(const struct ofport_dpif *ofport, struct flow *flow,
         if (!eth_addr_is_zero(cfg->dst_mac)) {
             flow->tunnel.dst_mac = cfg->dst_mac;
         }
-        flow->tunnel.vlan_id = cfg->vlan_id;
+        flow->tunnel.vlan_id = (OVS_FORCE ovs_be16)cfg->vlan_id;
     } else {
         flow->tunnel.out_odp_port = 0;
         memset(&flow->tunnel.src_mac, 0, sizeof(flow->tunnel.src_mac));

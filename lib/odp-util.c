@@ -3105,7 +3105,7 @@ odp_tun_key_from_attr__(const struct nlattr *attr, bool is_mask,
             break;
         }
         case OVS_TUNNEL_KEY_ATTR_OUT_PORT:
-            tun->out_odp_port = nl_attr_get_odp_port(a);
+            tun->out_odp_port = (OVS_FORCE ovs_be32)odp_to_u32(nl_attr_get_odp_port(a));
             break;
         case OVS_TUNNEL_KEY_ATTR_ETH_SRC:
             tun->src_mac = nl_attr_get_eth_addr(a);
