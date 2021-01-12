@@ -61,6 +61,30 @@ uint16_t tnl_udp_port_min = 32768;
 uint16_t tnl_udp_port_max = 61000;
 
 void *
+netdev_tnl_eth_extract_tnl_md(struct dp_packet *packet, struct flow_tnl *tnl,
+                  unsigned int *hlen)
+{
+    struct eth_header *eth = dp_packet_eth(packet);
+
+    if (!eth) {
+        return NULL;
+    }
+    *hlen = sizeof(struct eth_header);
+
+    memcpy(&tnl->src_mac, &eth->eth_src, sizeof tnl->src_mac);
+    memcpy(&tnl->dst_mac, &eth->eth_dst, sizeof tnl->dst_mac);
+
+    if (ETH_TYPE_VLAN_8021Q == ntohs(eth->eth_type)) {
+        struct vlan_header *vlan = (struct vlan_header *)(eth + 1);
+        tnl->vlan_id = (OVS_FORCE ovs_be16)vlan_tci_to_vid(vlan->vlan_tci);
+        *hlen += sizeof(struct vlan_header);
+        return vlan + 1;
+    } else {
+        return eth + 1;
+    }
+}
+
+void *
 netdev_tnl_ip_extract_tnl_md(struct dp_packet *packet, struct flow_tnl *tnl,
                   unsigned int *hlen)
 {
@@ -70,7 +94,11 @@ netdev_tnl_ip_extract_tnl_md(struct dp_packet *packet, struct flow_tnl *tnl,
     void *l4;
     int l3_size;
 
-    nh = dp_packet_l3(packet);
+    nh = netdev_tnl_eth_extract_tnl_md(packet, tnl, hlen);
+    if (!nh ) {
+        return NULL;
+    }
+
     ip = nh;
     ip6 = nh;
     l4 = dp_packet_l4(packet);
@@ -78,8 +106,6 @@ netdev_tnl_ip_extract_tnl_md(struct dp_packet *packet, struct flow_tnl *tnl,
     if (!nh || !l4) {
         return NULL;
     }
-
-    *hlen = sizeof(struct eth_header);
 
     l3_size = dp_packet_size(packet) -
               ((char *)nh - (char *)dp_packet_data(packet));
