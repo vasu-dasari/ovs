@@ -277,7 +277,7 @@ eth_build_header(struct ovs_action_push_tnl *data,
         struct vlan_header *vlan = (struct vlan_header *)(eth + 1);
 
         eth->eth_type = htons(ETH_TYPE_VLAN_8021Q);
-        vlan->vlan_tci = htons(params->flow->tunnel.vlan_id);
+        vlan->vlan_tci = htons((OVS_FORCE uint16_t)params->flow->tunnel.vlan_id);
         vlan->vlan_next_type = htons(eth_proto);
         data->header_len += sizeof(struct vlan_header);
         return vlan + 1;
