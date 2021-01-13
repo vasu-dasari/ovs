@@ -48,8 +48,8 @@ struct flow_tnl {
 
     struct eth_addr src_mac;
     struct eth_addr dst_mac;
-    uint16_t vlan_id;
-    odp_port_t out_odp_port;
+    ovs_be16 vlan_id;
+    ovs_be32 out_odp_port;
 
     uint8_t pad1[6];     /* Pad to 64 bits. */
     struct tun_metadata metadata;

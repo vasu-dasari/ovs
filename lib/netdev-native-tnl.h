@@ -118,6 +118,9 @@ netdev_tnl_get_src_port(struct dp_packet *packet)
 }
 
 void *
+netdev_tnl_eth_extract_tnl_md(struct dp_packet *packet, struct flow_tnl *tnl,
+                             unsigned int *hlen);
+void *
 netdev_tnl_ip_extract_tnl_md(struct dp_packet *packet, struct flow_tnl *tnl,
                              unsigned int *hlen);
 void *

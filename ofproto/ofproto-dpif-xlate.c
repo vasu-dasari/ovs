@@ -3463,7 +3463,7 @@ get_tnl_spec(struct xlate_ctx *ctx, const struct flow *flow,
 
     out_xport = xport_lookup(xcfg,
             odp_port_to_ofport(ctx->xbridge->ofproto->backer,
-                flow->tunnel.out_odp_port));
+                (OVS_FORCE odp_port_t)flow->tunnel.out_odp_port));
     if (out_xport) {
         *out_dev = get_ofp_port(out_xport->xbridge, OFPP_LOCAL);
         if (!(*out_dev)) {
@@ -3585,7 +3585,7 @@ propagate_tunnel_data_to_flow__(struct flow *dst_flow,
     dst_flow->dl_dst = dmac;
     dst_flow->dl_src = smac;
     if (src_flow->tunnel.vlan_id) {
-        flow_set_vlan_vid(dst_flow, htons(src_flow->tunnel.vlan_id));
+        flow_set_vlan_vid(dst_flow, htons((OVS_FORCE uint16_t)src_flow->tunnel.vlan_id));
     }
 
     dst_flow->packet_type = htonl(PT_ETH);
@@ -3694,7 +3694,7 @@ native_tunnel_output(struct xlate_ctx *ctx, const struct xport *xport,
     }
 
     if (!get_tnl_spec(ctx, flow, &dmac, &smac, &d_ip6, &s_ip6, &out_dev)) {
-        ctx->out_odp_port = flow->tunnel.out_odp_port;
+        ctx->out_odp_port = (OVS_FORCE odp_port_t)flow->tunnel.out_odp_port;
         xlate_report(ctx, OFT_DETAIL, "tunneling to %s via %s",
                 ipv6_string_mapped(buf_dip6, &d_ip6),
                 netdev_get_name(out_dev->netdev));

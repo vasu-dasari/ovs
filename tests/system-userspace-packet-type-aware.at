@@ -504,7 +504,6 @@ ADD_VETH(fp0, at_fp0, br-underlay, "1.1.1.1/24", "00:00:00:31:01:01")
 ADD_VLAN(fp0, at_fp0, 100, "172.31.1.1/24")
 NS_CHECK_EXEC([at_fp0], [arp -s 172.31.1.100 00:00:00:00:00:01])
 
-AT_CHECK([ovs-vsctl set port ovs-fp0 vlan_mode=dot1q-tunnel trunks=100])
 ADD_OVS_TUNNEL_WITH_L2([vxlan], [br0], [at_vxlan0], [1], [172.31.1.1], [172.31.1.100],
                         [00:00:00:31:01:01], [00:00:00:00:00:01], ["ovs-fp0"], [100])
 ADD_NATIVE_TUNNEL([vxlan], [at_vxlan_fp0], [at_fp0], [172.31.1.100], [10.1.1.1/24],
@@ -604,9 +603,6 @@ NS_CHECK_EXEC([at_fp1], [ip addr add "172.31.5.1/24" dev patch_fp1])
 NS_CHECK_EXEC([at_fp1], [arp -s 172.31.5.100 00:00:00:00:00:01])
 
 dnl ### Setup VxLAN tunnels from OvS to namespaces ###
-
-dnl # ovs-fp0 to trunk following vlans
-AT_CHECK([ovs-vsctl set port ovs-fp0 vlan_mode=dot1q-tunnel trunks=300,400,600])
 
 dnl # a1 <-> b1 : Regular tunnel using Linux routing
 AT_CHECK([ovs-vsctl add-port br0 a1_b1 -- \
@@ -851,9 +847,9 @@ table=4 reg0=3 actions=pop_vlan,output:3
 table=4 reg0=2 actions=output:2
 table=4 reg0=0 priority=50 actions=resubmit(,5)
 
-table=5 tun_id=1000 actions=load:1->NXM_NX_REG0[0..15],load:100->NXM_NX_REG1[0..11],resubmit(,4), load:3->NXM_NX_REG0[0..15],load:0->NXM_NX_REG1[0..11],resubmit(,4) 
-table=5 tun_id=2000 actions=load:1->NXM_NX_REG0[0..15],load:200->NXM_NX_REG1[0..11],resubmit(,4), load:3->NXM_NX_REG0[0..15],load:0->NXM_NX_REG1[0..11],resubmit(,4) 
-table=5 tun_id=1 actions=load:1->NXM_NX_REG0[0..15],load:1->NXM_NX_REG1[0..11],resubmit(,4), load:3->NXM_NX_REG0[0..15],load:0->NXM_NX_REG1[0..11],resubmit(,4) 
+table=5 tun_id=1000 actions=load:1->NXM_NX_REG0[0..15],load:100->NXM_NX_REG1[0..11],resubmit(,4), load:3->NXM_NX_REG0[0..15],load:0->NXM_NX_REG1[0..11],resubmit(,4)
+table=5 tun_id=2000 actions=load:1->NXM_NX_REG0[0..15],load:200->NXM_NX_REG1[0..11],resubmit(,4), load:3->NXM_NX_REG0[0..15],load:0->NXM_NX_REG1[0..11],resubmit(,4)
+table=5 tun_id=1 actions=load:1->NXM_NX_REG0[0..15],load:1->NXM_NX_REG1[0..11],resubmit(,4), load:3->NXM_NX_REG0[0..15],load:0->NXM_NX_REG1[0..11],resubmit(,4)
 table=5 dl_vlan=300 actions=load:1->NXM_NX_REG0[0..15],load:300->NXM_NX_REG1[0..11],resubmit(,4), load:2->NXM_NX_REG0[0..15],load:300->NXM_NX_REG1[0..11],resubmit(,4)
 ]])
 
