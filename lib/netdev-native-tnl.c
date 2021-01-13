@@ -71,9 +71,6 @@ netdev_tnl_eth_extract_tnl_md(struct dp_packet *packet, struct flow_tnl *tnl,
     }
     *hlen = sizeof(struct eth_header);
 
-    memcpy(&tnl->src_mac, &eth->eth_src, sizeof tnl->src_mac);
-    memcpy(&tnl->dst_mac, &eth->eth_dst, sizeof tnl->dst_mac);
-
     if (ETH_TYPE_VLAN_8021Q == ntohs(eth->eth_type)) {
         struct vlan_header *vlan = (struct vlan_header *)(eth + 1);
         tnl->vlan_id = (OVS_FORCE ovs_be16)vlan_tci_to_vid(vlan->vlan_tci);
