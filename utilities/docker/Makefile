@@ -13,7 +13,7 @@ export DOCKER_REPO=vdasari/ovs
 REPO = ${DOCKER_REPO}
 tag = ${OVS_VERSION}_${DISTRO}_${KERNEL_VERSION}
 
-build: ;docker build -t ${REPO}:${tag} --build-arg DISTRO=${DISTRO} \
+build: ;docker build --no-cache -t ${REPO}:${tag} --build-arg DISTRO=${DISTRO} \
 --build-arg OVS_BRANCH=${OVS_BRANCH} \
 --build-arg KERNEL_VERSION=${KERNEL_VERSION} \
 --build-arg GITHUB_SRC=${GITHUB_SRC} -f ${DISTRO}/Dockerfile .
