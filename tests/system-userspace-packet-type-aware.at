@@ -791,7 +791,7 @@ OVS_TRAFFIC_VSWITCHD_START()
 AT_CHECK([ovs-vsctl set-manager ptcp:6640])
 AT_CHECK([ovs-appctl -t ovsdb-server ovsdb-server/add-remote db:Open_vSwitch,Open_vSwitch,manager_options])
 
-ADD_NAMESPACES(at_fp0, at_ap0)
+ADD_NAMESPACES(at_fp0, at_fp1, at_ap0)
 
 AT_CHECK([ip link set dev br0 down])
 dnl AT_CHECK([ip addr add dev br0 "172.31.1.100/24"])
@@ -809,15 +809,33 @@ ADD_VLAN(fp0, at_fp0, 4050, "172.31.1.1/24")
 ADD_VLAN(fp0, at_fp0, 300, "10.1.30.1/24")
 
 AT_CHECK([ovs-vsctl set port ovs-fp0 vlan_mode=dot1q-tunnel trunks=4050])
+
 ADD_OVS_TUNNEL_WITH_L2([vxlan], [br0], [at_vxlan0], [flow], [172.31.1.1], [172.31.1.100],
                         [00:00:00:31:01:01], [00:00:00:00:00:01], ["ovs-fp0"], [4050])
-ADD_NATIVE_TUNNEL([vxlan], [at_vxlan_1], [at_fp0], [172.31.1.100], [10.1.1.1/24],
+
+ADD_NATIVE_TUNNEL([vxlan], [at_vxlan_0_1], [at_fp0], [172.31.1.100], [10.1.1.1/24],
                           [id 1 dstport 4789], [address "00:00:10:01:01:01"])
-ADD_NATIVE_TUNNEL([vxlan], [at_vxlan_100], [at_fp0], [172.31.1.100], [10.1.10.1/24],
+ADD_NATIVE_TUNNEL([vxlan], [at_vxlan_0_100], [at_fp0], [172.31.1.100], [10.1.10.1/24],
                           [id 1000 dstport 4789], [address "00:00:10:01:01:01"])
-ADD_NATIVE_TUNNEL([vxlan], [at_vxlan_200], [at_fp0], [172.31.1.100], [10.1.20.1/24],
+ADD_NATIVE_TUNNEL([vxlan], [at_vxlan_0_200], [at_fp0], [172.31.1.100], [10.1.20.1/24],
                           [id 2000 dstport 4789], [address "00:00:10:01:01:01"])
 NS_CHECK_EXEC([at_fp0], [arp -s 172.31.1.100 00:00:00:00:00:01])
+
+ADD_VETH(fp1, at_fp1, br0, "1.2.1.2/24", "00:00:00:31:01:02")
+ADD_VLAN(fp1, at_fp1, 4050, "172.31.1.2/24")
+ADD_VLAN(fp1, at_fp1, 300, "10.1.30.2/24")
+
+AT_CHECK([ovs-vsctl set port ovs-fp1 vlan_mode=dot1q-tunnel trunks=4051])
+ADD_OVS_TUNNEL_WITH_L2([vxlan], [br0], [at_vxlan1], [flow], [172.31.1.2], [172.31.1.100],
+                        [00:00:00:31:01:02], [00:00:00:00:00:01], ["ovs-fp1"], [4050])
+
+ADD_NATIVE_TUNNEL([vxlan], [at_vxlan_1_1], [at_fp1], [172.31.1.100], [10.1.1.2/24],
+                          [id 1 dstport 4789], [address "00:00:10:01:01:02"])
+ADD_NATIVE_TUNNEL([vxlan], [at_vxlan0_1_100], [at_fp1], [172.31.1.100], [10.1.10.2/24],
+                          [id 1000 dstport 4789], [address "00:00:10:01:01:02"])
+ADD_NATIVE_TUNNEL([vxlan], [at_vxlan0_1_200], [at_fp1], [172.31.1.100], [10.1.20.2/24],
+                          [id 2000 dstport 4789], [address "00:00:10:01:01:02"])
+NS_CHECK_EXEC([at_fp1], [arp -s 172.31.1.100 00:00:00:00:00:01])
 
 AT_DATA([flows.txt], [[
 table=0, dl_src=01:00:00:00:00:00/01:00:00:00:00:00, actions=drop
@@ -843,14 +861,16 @@ table=4 reg0=1,reg1=1 actions=output:reg0
 table=4 reg0=1,reg1=100 actions=mod_vlan_vid:100,output:reg0
 table=4 reg0=1,reg1=200 actions=mod_vlan_vid:200,output:reg0
 table=4 reg0=1,dl_vlan=300 actions=output:reg0
-table=4 reg0=3 actions=pop_vlan,output:3
 table=4 reg0=2 actions=output:2
+table=4 reg0=4 actions=output:4
+table=4 reg0=3 actions=pop_vlan,output:3
+table=4 reg0=5 actions=pop_vlan,output:5
 table=4 reg0=0 priority=50 actions=resubmit(,5)
 
-table=5 tun_id=1000 actions=load:1->NXM_NX_REG0[0..15],load:100->NXM_NX_REG1[0..11],resubmit(,4), load:3->NXM_NX_REG0[0..15],load:0->NXM_NX_REG1[0..11],resubmit(,4)
-table=5 tun_id=2000 actions=load:1->NXM_NX_REG0[0..15],load:200->NXM_NX_REG1[0..11],resubmit(,4), load:3->NXM_NX_REG0[0..15],load:0->NXM_NX_REG1[0..11],resubmit(,4)
-table=5 tun_id=1 actions=load:1->NXM_NX_REG0[0..15],load:1->NXM_NX_REG1[0..11],resubmit(,4), load:3->NXM_NX_REG0[0..15],load:0->NXM_NX_REG1[0..11],resubmit(,4)
-table=5 dl_vlan=300 actions=load:1->NXM_NX_REG0[0..15],load:300->NXM_NX_REG1[0..11],resubmit(,4), load:2->NXM_NX_REG0[0..15],load:300->NXM_NX_REG1[0..11],resubmit(,4)
+table=5 tun_id=1000 actions=load:1->NXM_NX_REG0[0..15],load:100->NXM_NX_REG1[0..11],resubmit(,4), load:3->NXM_NX_REG0[0..15],load:0->NXM_NX_REG1[0..11],resubmit(,4), load:5->NXM_NX_REG0[0..15],load:0->NXM_NX_REG1[0..11],resubmit(,4)
+table=5 tun_id=2000 actions=load:1->NXM_NX_REG0[0..15],load:200->NXM_NX_REG1[0..11],resubmit(,4), load:3->NXM_NX_REG0[0..15],load:0->NXM_NX_REG1[0..11],resubmit(,4), load:5->NXM_NX_REG0[0..15],load:0->NXM_NX_REG1[0..11],resubmit(,4)
+table=5 tun_id=1 actions=load:1->NXM_NX_REG0[0..15],load:1->NXM_NX_REG1[0..11],resubmit(,4), load:3->NXM_NX_REG0[0..15],load:0->NXM_NX_REG1[0..11],resubmit(,4), load:5->NXM_NX_REG0[0..15],load:0->NXM_NX_REG1[0..11], resubmit(,4)
+table=5 dl_vlan=300 actions=load:1->NXM_NX_REG0[0..15],load:300->NXM_NX_REG1[0..11],resubmit(,4), load:2->NXM_NX_REG0[0..15],load:300->NXM_NX_REG1[0..11],resubmit(,4), load:4->NXM_NX_REG0[0..15],load:300->NXM_NX_REG1[0..11], resubmit(,4)
 ]])
 
 AT_CHECK([ovs-ofctl add-flows br0 flows.txt])
@@ -867,6 +887,19 @@ NS_CHECK_EXEC([at_ap0], [ping -q -c 3 -i 0.3 -w 2 10.1.20.1 | FORMAT_PING], [0],
 3 packets transmitted, 3 received, 0% packet loss, time 0ms
 ])
 NS_CHECK_EXEC([at_ap0], [ping -q -c 3 -i 0.3 -w 2 10.1.30.1 | FORMAT_PING], [0], [dnl
+3 packets transmitted, 3 received, 0% packet loss, time 0ms
+])
+
+NS_CHECK_EXEC([at_ap0], [ping -q -c 3 -i 0.3 -w 2 10.1.1.2 | FORMAT_PING], [0], [dnl
+3 packets transmitted, 3 received, 0% packet loss, time 0ms
+])
+NS_CHECK_EXEC([at_ap0], [ping -q -c 3 -i 0.3 -w 2 10.1.10.2 | FORMAT_PING], [0], [dnl
+3 packets transmitted, 3 received, 0% packet loss, time 0ms
+])
+NS_CHECK_EXEC([at_ap0], [ping -q -c 3 -i 0.3 -w 2 10.1.20.2 | FORMAT_PING], [0], [dnl
+3 packets transmitted, 3 received, 0% packet loss, time 0ms
+])
+NS_CHECK_EXEC([at_ap0], [ping -q -c 3 -i 0.3 -w 2 10.1.30.2 | FORMAT_PING], [0], [dnl
 3 packets transmitted, 3 received, 0% packet loss, time 0ms
 ])
 
