@@ -808,7 +808,7 @@ ADD_VETH(fp0, at_fp0, br0, "1.2.1.2/24", "00:00:00:31:01:01")
 ADD_VLAN(fp0, at_fp0, 4050, "172.31.1.1/24")
 ADD_VLAN(fp0, at_fp0, 300, "10.1.30.1/24")
 
-AT_CHECK([ovs-vsctl set port ovs-fp0 vlan_mode=dot1q-tunnel trunks=4050])
+AT_CHECK([ovs-vsctl set port ovs-fp0 vlan_mode=trunk trunks=4050])
 
 ADD_OVS_TUNNEL_WITH_L2([vxlan], [br0], [at_vxlan0], [flow], [172.31.1.1], [172.31.1.100],
                         [00:00:00:31:01:01], [00:00:00:00:00:01], ["ovs-fp0"], [4050])
@@ -825,7 +825,7 @@ ADD_VETH(fp1, at_fp1, br0, "1.2.1.2/24", "00:00:00:31:01:02")
 ADD_VLAN(fp1, at_fp1, 4050, "172.31.1.2/24")
 ADD_VLAN(fp1, at_fp1, 300, "10.1.30.2/24")
 
-AT_CHECK([ovs-vsctl set port ovs-fp1 vlan_mode=dot1q-tunnel trunks=4051])
+AT_CHECK([ovs-vsctl set port ovs-fp1 vlan_mode=trunk trunks=4050])
 ADD_OVS_TUNNEL_WITH_L2([vxlan], [br0], [at_vxlan1], [flow], [172.31.1.2], [172.31.1.100],
                         [00:00:00:31:01:02], [00:00:00:00:00:01], ["ovs-fp1"], [4050])
 
@@ -903,7 +903,7 @@ NS_CHECK_EXEC([at_ap0], [ping -q -c 3 -i 0.3 -w 2 10.1.30.2 | FORMAT_PING], [0],
 3 packets transmitted, 3 received, 0% packet loss, time 0ms
 ])
 
-AT_CHECK("vasu break")
+# AT_CHECK("vasu break")
 
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
