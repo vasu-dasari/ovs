@@ -3585,7 +3585,9 @@ propagate_tunnel_data_to_flow__(struct flow *dst_flow,
     dst_flow->dl_dst = dmac;
     dst_flow->dl_src = smac;
     if (src_flow->tunnel.vlan_id) {
-        flow_set_vlan_vid(dst_flow, htons((OVS_FORCE uint16_t)src_flow->tunnel.vlan_id));
+        flow_set_vlan_vid(dst_flow,
+                htons((OVS_FORCE uint16_t)src_flow->tunnel.vlan_id | (VLAN_CFI)));
+        flow_fix_vlan_tpid(dst_flow);
     }
 
     dst_flow->packet_type = htonl(PT_ETH);
