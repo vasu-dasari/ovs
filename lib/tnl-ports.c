@@ -136,7 +136,9 @@ map_insert(odp_port_t port, struct eth_addr mac, struct in6_addr *addr,
         } else {
             match.wc.masks.ipv6_dst = in6addr_exact;
         }
-        match.wc.masks.vlans[0].tci = OVS_BE16_MAX;
+        /* Make vlan_tci as dont-care option, so that packets can come
+         * with vlan's as well */
+        match.wc.masks.vlans[0].tci = 0;
         memset(&match.wc.masks.dl_dst, 0xff, sizeof (struct eth_addr));
 
         cls_rule_init(&p->cr, &match, 0); /* Priority == 0. */
@@ -220,6 +222,25 @@ out:
     ovs_mutex_unlock(&mutex);
 }
 
+void
+tnl_port_map_insert_by_ip(odp_port_t port, struct eth_addr mac,
+        struct in6_addr *addr, ovs_be16 tp_port, const char dev_name[],
+        const char type[])
+{
+    uint8_t nw_proto;
+
+    nw_proto = tnl_type_to_nw_proto(type);
+    if (!nw_proto) {
+        return;
+    }
+
+    tnl_port_map_insert(port, tp_port, dev_name, type);
+
+    ovs_mutex_lock(&mutex);
+    map_insert(port, mac, addr, nw_proto, tp_port, dev_name);
+    ovs_mutex_unlock(&mutex);
+}
+
 static void
 tnl_port_unref(const struct cls_rule *cr)
 {
@@ -277,6 +298,24 @@ tnl_port_map_delete(odp_port_t port, const char type[])
             break;
         }
     }
+    ovs_mutex_unlock(&mutex);
+}
+
+void
+tnl_port_map_delete_by_ip(odp_port_t port, struct eth_addr mac,
+        struct in6_addr *addr, ovs_be16 tp_port, const char type[])
+{
+    uint8_t nw_proto;
+
+    nw_proto = tnl_type_to_nw_proto(type);
+    if (!nw_proto) {
+        return;
+    }
+
+    tnl_port_map_delete(port, type);
+
+    ovs_mutex_lock(&mutex);
+    map_delete(mac, addr, tp_port, nw_proto);
     ovs_mutex_unlock(&mutex);
 }
 

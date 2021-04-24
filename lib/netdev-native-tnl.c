@@ -61,6 +61,27 @@ uint16_t tnl_udp_port_min = 32768;
 uint16_t tnl_udp_port_max = 61000;
 
 void *
+netdev_tnl_eth_extract_tnl_md(struct dp_packet *packet, struct flow_tnl *tnl,
+                  unsigned int *hlen)
+{
+    struct eth_header *eth = dp_packet_eth(packet);
+
+    if (!eth) {
+        return NULL;
+    }
+    *hlen = sizeof(struct eth_header);
+
+    if (ETH_TYPE_VLAN_8021Q == ntohs(eth->eth_type)) {
+        struct vlan_header *vlan = (struct vlan_header *)(eth + 1);
+        tnl->vlan_id = (OVS_FORCE ovs_be16)vlan_tci_to_vid(vlan->vlan_tci);
+        *hlen += sizeof(struct vlan_header);
+        return vlan + 1;
+    } else {
+        return eth + 1;
+    }
+}
+
+void *
 netdev_tnl_ip_extract_tnl_md(struct dp_packet *packet, struct flow_tnl *tnl,
                   unsigned int *hlen)
 {
@@ -70,7 +91,11 @@ netdev_tnl_ip_extract_tnl_md(struct dp_packet *packet, struct flow_tnl *tnl,
     void *l4;
     int l3_size;
 
-    nh = dp_packet_l3(packet);
+    nh = netdev_tnl_eth_extract_tnl_md(packet, tnl, hlen);
+    if (!nh ) {
+        return NULL;
+    }
+
     ip = nh;
     ip6 = nh;
     l4 = dp_packet_l4(packet);
@@ -78,8 +103,6 @@ netdev_tnl_ip_extract_tnl_md(struct dp_packet *packet, struct flow_tnl *tnl,
     if (!nh || !l4) {
         return NULL;
     }
-
-    *hlen = sizeof(struct eth_header);
 
     l3_size = dp_packet_size(packet) -
               ((char *)nh - (char *)dp_packet_data(packet));
@@ -161,15 +184,20 @@ netdev_tnl_push_ip_header(struct dp_packet *packet,
     packet->packet_type = htonl(PT_ETH);
     dp_packet_reset_offsets(packet);
     packet->l3_ofs = sizeof (struct eth_header);
+    /* If tunnel needs to go over a vlan, adjust offsets accordingly */
+    if (eth->eth_type == htons(ETH_TYPE_VLAN_8021Q)) {
+        *ip_tot_size -=  sizeof (struct vlan_header);
+        packet->l3_ofs += sizeof (struct vlan_header);
+    }
 
     if (netdev_tnl_is_header_ipv6(header)) {
-        ip6 = netdev_tnl_ipv6_hdr(eth);
+        ip6 = dp_packet_l3(packet);
         *ip_tot_size -= IPV6_HEADER_LEN;
         ip6->ip6_plen = htons(*ip_tot_size);
         packet->l4_ofs = dp_packet_size(packet) - *ip_tot_size;
         return ip6 + 1;
     } else {
-        ip = netdev_tnl_ip_hdr(eth);
+        ip = dp_packet_l3(packet);
         ip->ip_tot_len = htons(*ip_tot_size);
         ip->ip_csum = recalc_csum16(ip->ip_csum, 0, ip->ip_tot_len);
         *ip_tot_size -= IP_HEADER_LEN;
@@ -221,13 +249,7 @@ netdev_tnl_calc_udp_csum(struct udp_header *udp, struct dp_packet *packet,
 {
     uint32_t csum;
 
-    if (netdev_tnl_is_header_ipv6(dp_packet_data(packet))) {
-        csum = packet_csum_pseudoheader6(netdev_tnl_ipv6_hdr(
-                                         dp_packet_data(packet)));
-    } else {
-        csum = packet_csum_pseudoheader(netdev_tnl_ip_hdr(
-                                        dp_packet_data(packet)));
-    }
+    csum = packet_csum_pseudoheader6(dp_packet_l3(packet));
 
     csum = csum_continue(csum, udp, ip_tot_size);
     udp->udp_csum = csum_finish(csum);
@@ -270,7 +292,21 @@ eth_build_header(struct ovs_action_push_tnl *data,
     eth->eth_src = params->smac;
     eth->eth_type = htons(eth_proto);
     data->header_len = sizeof(struct eth_header);
-    return eth + 1;
+    /* If this is fully specified tunnel and user configured the tunnel to
+     * go over a vlan, add the vlan_header with tpid of ETH_TYPE_VLAN_8021Q
+     * and vlan_pcp 0 */
+    if ((params->flow->tunnel.out_odp_port) &&
+            (params->flow->tunnel.vlan_id)) {
+        struct vlan_header *vlan = (struct vlan_header *)(eth + 1);
+
+        eth->eth_type = htons(ETH_TYPE_VLAN_8021Q);
+        vlan->vlan_tci = htons((OVS_FORCE uint16_t)params->flow->tunnel.vlan_id);
+        vlan->vlan_next_type = htons(eth_proto);
+        data->header_len += sizeof(struct vlan_header);
+        return vlan + 1;
+    } else {
+        return eth + 1;
+    }
 }
 
 void *

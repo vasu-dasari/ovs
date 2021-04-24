@@ -775,6 +775,36 @@ set_tunnel_config(struct netdev *dev_, const struct smap *args, char **errp)
                use them, but they are read by 'ovs-monitor-ipsec'. In order to
                suppress the "unknown %s argument" warning message below, we
                handle them here by ignoring them. */
+        } else if (!strcmp(node->key, "out_port")) {
+            char *out_port_name = node->value;
+
+            if (!strcmp(name, out_port_name)) {
+                ds_put_format(&errors, "%s: out_port cannot be self",
+                        out_port_name);
+                err = EINVAL;
+                goto out;
+            }
+            tnl_cfg.out_port_name = xstrdup(out_port_name);
+        } else if (!strcmp(node->key, "vlan_id")) {
+            char *endptr;
+            int vlan_id;
+            vlan_id = strtol(node->value, &endptr, 0);
+            if (*endptr == '\0' && vlan_id == (vlan_id & 0xfff)) {
+                tnl_cfg.vlan_id = vlan_id;
+            } else {
+                ds_put_format(&errors, "%s: invalid vlan_id %s\n", name,
+                        node->value);
+            }
+        } else if (!strcmp(node->key, "src_mac")) {
+            if (!eth_addr_from_string(node->value, &tnl_cfg.src_mac)) {
+                ds_put_format(&errors, "%s: invalid src_mac %s\n", name,
+                        node->value);
+            }
+        } else if (!strcmp(node->key, "dst_mac")) {
+            if (!eth_addr_from_string(node->value, &tnl_cfg.dst_mac)) {
+                ds_put_format(&errors, "%s: invalid dst_mac %s\n", name,
+                        node->value);
+            }
         } else {
             ds_put_format(&errors, "%s: unknown %s argument '%s'\n", name,
                           type, node->key);
@@ -838,6 +868,22 @@ set_tunnel_config(struct netdev *dev_, const struct smap *args, char **errp)
         err = EINVAL;
         goto out;
     }
+    if (tnl_cfg.out_port_name && (
+                (eth_addr_is_zero(tnl_cfg.src_mac)) ||
+                (eth_addr_is_zero(tnl_cfg.dst_mac)) )) {
+        ds_put_format(&errors,
+                       "%s: 'src_mac', 'dst_mac' have "
+                       "to be specified\n",
+                       name);
+        err = EINVAL;
+        goto out;
+    }
+    if (tnl_cfg.vlan_id && (!tnl_cfg.out_port_name)) {
+        ds_put_format(&errors,
+                       "%s: 'out_port' have to be specified\n", name);
+        err = EINVAL;
+        goto out;
+    }
     if (!tnl_cfg.ttl) {
         tnl_cfg.ttl = DEFAULT_TTL;
     }
@@ -861,7 +907,18 @@ set_tunnel_config(struct netdev *dev_, const struct smap *args, char **errp)
     update_vxlan_global_cfg(dev_, &dev->tnl_cfg, &tnl_cfg);
 
     ovs_mutex_lock(&dev->mutex);
+
+    /* out_port_name is a pointer, so if user issues same tnl-cfg as
+     * as the on the db, then let's not create a churn up the stack */
+    if ((dev->tnl_cfg.out_port_name) && (tnl_cfg.out_port_name) &&
+            (!strcmp(dev->tnl_cfg.out_port_name, tnl_cfg.out_port_name))) {
+        free(tnl_cfg.out_port_name);
+        tnl_cfg.out_port_name = dev->tnl_cfg.out_port_name;
+    }
     if (memcmp(&dev->tnl_cfg, &tnl_cfg, sizeof tnl_cfg)) {
+        if (dev->tnl_cfg.out_port_name != tnl_cfg.out_port_name) {
+            free(dev->tnl_cfg.out_port_name);
+        }
         dev->tnl_cfg = tnl_cfg;
         tunnel_check_status_change__(dev);
         netdev_change_seq_changed(dev_);
@@ -876,6 +933,9 @@ out:
         VLOG_WARN("%s", ds_cstr(&errors));
         if (err) {
             *errp = ds_steal_cstr(&errors);
+            if (tnl_cfg.out_port_name) {
+                free(tnl_cfg.out_port_name);
+            }
         }
     }
 
@@ -1012,6 +1072,24 @@ get_tunnel_config(const struct netdev *dev, struct smap *args)
                 }
             }
         }
+    }
+
+    if (!eth_addr_is_zero(tnl_cfg.src_mac)) {
+        smap_add_format(args, "src_mac", ETH_ADDR_FMT,
+                ETH_ADDR_ARGS(tnl_cfg.src_mac));
+    }
+
+    if (!eth_addr_is_zero(tnl_cfg.dst_mac)) {
+        smap_add_format(args, "dst_mac", ETH_ADDR_FMT,
+                ETH_ADDR_ARGS(tnl_cfg.dst_mac));
+    }
+
+    if (tnl_cfg.vlan_id) {
+        smap_add_format(args, "vlan_id", "%d", tnl_cfg.vlan_id);
+    }
+
+    if (tnl_cfg.out_port_name) {
+        smap_add_format(args, "out_port", "%s", tnl_cfg.out_port_name);
     }
 
     return 0;

@@ -1398,6 +1398,14 @@ format_flow_tunnel(struct ds *s, const struct match *match)
                             FLOW_TNL_F_MASK);
         ds_put_char(s, ',');
     }
+    if (wc->masks.tunnel.out_odp_port) {
+        ds_put_format(s, "tun_out_port=%"PRIu32",", tnl->out_odp_port);
+    }
+    format_eth_masked(s, "tun_dl_src", tnl->src_mac, wc->masks.tunnel.src_mac);
+    format_eth_masked(s, "tun_dl_dst", tnl->dst_mac, wc->masks.tunnel.dst_mac);
+    if (wc->masks.tunnel.vlan_id) {
+        ds_put_format(s, "tun_dl_vlan=%"PRIu16",", tnl->vlan_id);
+    }
     tun_metadata_match_format(s, match);
 }
 
