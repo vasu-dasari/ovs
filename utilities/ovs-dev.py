@@ -203,6 +203,8 @@ commands.append(tag)
 
 def kill():
     sudo()
+    _sh("ip link del ovs-netdev", check=False)
+    _sh("ip link del br0", check=False)
     for proc in ["ovs-vswitchd", "ovsdb-server"]:
         if os.path.exists("%s/run/openvswitch/%s.pid" % (RUNDIR, proc)):
             _sh("ovs-appctl", "-t", proc, "exit", check=False)

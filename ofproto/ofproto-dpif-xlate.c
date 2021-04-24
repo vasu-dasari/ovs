@@ -426,6 +426,44 @@ struct xvlan {
     struct xvlan_single v[FLOW_MAX_VLAN_HEADERS];
 };
 
+#if 0
+#define PRINTF_xlate(fmt, args...) xlate_report(ctx, OFT_DETAIL, "%s:%d: "fmt, __func__, __LINE__, ##args)
+
+static void
+print_odp_actions(struct xlate_ctx *ctx, const char* func, int line);
+#define PRINT_odp_actions(ctx) print_odp_actions(ctx, __func__, __LINE__)
+
+static void
+print_odp_actions(struct xlate_ctx *ctx, const char* func, int line)
+{
+    struct ds s;
+    ds_init(&s);
+
+    format_odp_actions(&s, ctx->odp_actions->data, ctx->odp_actions->size, NULL);
+    PRINTF_func(func, line, "odp_actions: size %d, %s",
+            ctx->odp_actions->size, ds_cstr(&s));
+
+    ds_destroy(&s);
+}
+
+static void print_flow(struct xlate_ctx *ctx, const char* func, int line)
+{
+    char *s = flow_to_string(&ctx->xin->flow, NULL);
+    PRINTF_func(func, line, "flow: %s", s);
+    free(s);
+    s = flow_to_string(&ctx->base_flow, NULL);
+    PRINTF_func(func, line, "base_flow: %s", s);
+    free(s);
+    PRINTF_func(func, line, "Output Vlan: original [{0x%04x, 0x%04x}, {0x%04x, 0x%04x}], base: [{0x%04x, 0x%04x}, {0x%04x, 0x%04x}]",
+            ctx->xin->flow.vlans[0].tci, ctx->xin->flow.vlans[0].tpid,
+            ctx->xin->flow.vlans[1].tci, ctx->xin->flow.vlans[1].tpid,
+            ctx->base_flow.vlans[0].tci, ctx->base_flow.vlans[0].tpid,
+            ctx->base_flow.vlans[1].tci, ctx->base_flow.vlans[1].tpid);
+    print_odp_actions(ctx, func, line);
+}
+#define PRINTF_flow(ctx) print_flow(ctx, __func__, __LINE__)
+#endif
+
 const char *xlate_strerror(enum xlate_error error)
 {
     switch (error) {
