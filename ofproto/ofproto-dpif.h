@@ -376,6 +376,7 @@ enum ofperr ofproto_dpif_flow_mod_init_for_learn(
 
 struct ofport_dpif *ofp_port_to_ofport(const struct ofproto_dpif *,
                                        ofp_port_t);
+odp_port_t odp_port_by_name(const char *name);
 
 int ofproto_dpif_add_internal_flow(struct ofproto_dpif *,
                                    struct match *, int priority,

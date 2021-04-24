@@ -6478,6 +6478,23 @@ odp_port_to_ofp_port(const struct ofproto_dpif *ofproto, odp_port_t odp_port)
     }
 }
 
+odp_port_t
+odp_port_by_name(const char *name)
+{
+    struct ofproto_dpif *ofproto;
+    struct dpif_port dpif_port;
+
+    HMAP_FOR_EACH (ofproto, all_ofproto_dpifs_by_name_node,
+                   &all_ofproto_dpifs_by_name) {
+        if (dpif_port_query_by_name(ofproto->backer->dpif, name,
+                &dpif_port)) {
+            continue;
+        }
+        return dpif_port.port_no;
+    }
+    return ODPP_NONE;
+}
+
 /* 'match' is non-const to allow for temporary modifications.  Any changes are
  * restored before returning. */
 int
