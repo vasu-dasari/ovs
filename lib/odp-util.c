@@ -640,13 +640,22 @@ static void
 format_odp_tnl_push_header(struct ds *ds, struct ovs_action_push_tnl *data)
 {
     const struct eth_header *eth;
+    const struct vlan_header *vlan = NULL;
+    ovs_be16 ip_type = 0;
     const void *l3;
     const void *l4;
     const struct udp_header *udp;
 
     eth = (const struct eth_header *)data->header;
 
-    l3 = eth + 1;
+    if (eth->eth_type == htons(ETH_TYPE_VLAN_8021Q)) {
+        vlan = (const struct vlan_header *)(eth + 1);
+        ip_type = vlan->vlan_next_type;
+        l3 = vlan + 1;
+    } else {
+        ip_type = eth->eth_type;
+        l3 = eth + 1;
+    }
 
     /* Ethernet */
     ds_put_format(ds, "header(size=%"PRIu32",type=%"PRIu32",eth(dst=",
@@ -654,9 +663,12 @@ format_odp_tnl_push_header(struct ds *ds, struct ovs_action_push_tnl *data)
     ds_put_format(ds, ETH_ADDR_FMT, ETH_ADDR_ARGS(eth->eth_dst));
     ds_put_format(ds, ",src=");
     ds_put_format(ds, ETH_ADDR_FMT, ETH_ADDR_ARGS(eth->eth_src));
-    ds_put_format(ds, ",dl_type=0x%04"PRIx16"),", ntohs(eth->eth_type));
+    if (vlan) {
+        ds_put_format(ds, ",dl_vlan=%"PRIu16, ntohs(vlan->vlan_tci));
+    }
+    ds_put_format(ds, ",dl_type=0x%04"PRIx16"),", ntohs(ip_type));
 
-    if (eth->eth_type == htons(ETH_TYPE_IP)) {
+    if (ip_type == htons(ETH_TYPE_IP)) {
         /* IPv4 */
         const struct ip_header *ip = l3;
         ds_put_format(ds, "ipv4(src="IP_FMT",dst="IP_FMT",proto=%"PRIu8
@@ -2676,6 +2688,10 @@ static const struct attr_len_tbl ovs_tun_key_attr_lens[OVS_TUNNEL_KEY_ATTR_MAX +
     [OVS_TUNNEL_KEY_ATTR_IPV6_DST]      = { .len = 16 },
     [OVS_TUNNEL_KEY_ATTR_ERSPAN_OPTS]   = { .len = ATTR_LEN_VARIABLE },
     [OVS_TUNNEL_KEY_ATTR_GTPU_OPTS]   = { .len = ATTR_LEN_VARIABLE },
+    [OVS_TUNNEL_KEY_ATTR_OUT_PORT]      = { .len = 4 },
+    [OVS_TUNNEL_KEY_ATTR_ETH_SRC]       = { .len = 6 },
+    [OVS_TUNNEL_KEY_ATTR_ETH_DST]       = { .len = 6 },
+    [OVS_TUNNEL_KEY_ATTR_VLAN_ID]       = { .len = 2 },
 };
 
 const struct attr_len_tbl ovs_flow_key_attr_lens[OVS_KEY_ATTR_MAX + 1] = {
@@ -3088,7 +3104,18 @@ odp_tun_key_from_attr__(const struct nlattr *attr, bool is_mask,
             tun->gtpu_msgtype = opts->msgtype;
             break;
         }
-
+        case OVS_TUNNEL_KEY_ATTR_OUT_PORT:
+            tun->out_odp_port = (OVS_FORCE ovs_be32)odp_to_u32(nl_attr_get_odp_port(a));
+            break;
+        case OVS_TUNNEL_KEY_ATTR_ETH_SRC:
+            tun->src_mac = nl_attr_get_eth_addr(a);
+            break;
+        case OVS_TUNNEL_KEY_ATTR_ETH_DST:
+            tun->dst_mac = nl_attr_get_eth_addr(a);
+            break;
+        case OVS_TUNNEL_KEY_ATTR_VLAN_ID:
+            tun->vlan_id = nl_attr_get_be16(a);
+            break;
         default:
             /* Allow this to show up as unexpected, if there are unknown
              * tunnel attribute, eventually resulting in ODP_FIT_TOO_MUCH. */
@@ -3210,6 +3237,21 @@ tun_key_to_attr(struct ofpbuf *a, const struct flow_tnl *tun_key,
         opts.msgtype = tun_key->gtpu_msgtype;
         nl_msg_put_unspec(a, OVS_TUNNEL_KEY_ATTR_GENEVE_OPTS,
                           &opts, sizeof(opts));
+    }
+    if (tun_key->out_odp_port) {
+        nl_msg_put_be32(a, OVS_TUNNEL_KEY_ATTR_OUT_PORT,
+                tun_key->out_odp_port);
+    }
+    if (!eth_addr_is_zero(tun_key->src_mac)) {
+        nl_msg_put_unspec(a, OVS_TUNNEL_KEY_ATTR_ETH_SRC, &tun_key->src_mac,
+                sizeof(tun_key->src_mac));
+    }
+    if (!eth_addr_is_zero(tun_key->dst_mac)) {
+        nl_msg_put_unspec(a, OVS_TUNNEL_KEY_ATTR_ETH_DST, &tun_key->dst_mac,
+                sizeof(tun_key->dst_mac));
+    }
+    if (tun_key->vlan_id) {
+        nl_msg_put_be16(a, OVS_TUNNEL_KEY_ATTR_VLAN_ID, tun_key->vlan_id);
     }
     nl_msg_end_nested(a, tun_key_ofs);
 }
@@ -3531,6 +3573,23 @@ format_be16x(struct ds *ds, const char *name, ovs_be16 key,
         ds_put_format(ds, "%s=%#"PRIx16, name, ntohs(key));
         if (!mask_full) { /* Partially masked. */
             ds_put_format(ds, "/%#"PRIx16, ntohs(*mask));
+        }
+        ds_put_char(ds, ',');
+    }
+}
+
+static void
+format_be32(struct ds *ds, const char *name, ovs_be32 key,
+            const ovs_be32 *mask, bool verbose)
+{
+    bool mask_empty = mask && !*mask;
+
+    if (verbose || !mask_empty) {
+        bool mask_full = !mask || *mask == OVS_BE32_MAX;
+
+        ds_put_format(ds, "%s=0x%"PRIu32, name, ntohl(key));
+        if (!mask_full) { /* Partially masked. */
+            ds_put_format(ds, "/%#"PRIx32, ntohl(*mask));
         }
         ds_put_char(ds, ',');
     }
@@ -3979,6 +4038,20 @@ format_odp_tun_attr(const struct nlattr *attr, const struct nlattr *mask_attr,
             ds_put_cstr(ds, "gtpu(");
             format_odp_tun_gtpu_opt(a, ma, ds, verbose);
             ds_put_cstr(ds, "),");
+            break;
+        case OVS_TUNNEL_KEY_ATTR_OUT_PORT:
+            format_be32(ds, "out_port", nl_attr_get_be32(a),
+                    ma ? nl_attr_get(ma) : NULL, verbose);
+            break;
+        case OVS_TUNNEL_KEY_ATTR_ETH_SRC:
+            format_eth(ds, "dl_src", nl_attr_get_eth_addr(a), NULL, verbose);
+            break;
+        case OVS_TUNNEL_KEY_ATTR_ETH_DST:
+            format_eth(ds, "dl_dst", nl_attr_get_eth_addr(a), NULL, verbose);
+            break;
+        case OVS_TUNNEL_KEY_ATTR_VLAN_ID:
+            format_be16(ds, "vlan_id", nl_attr_get_be16(a),
+                        ma ? nl_attr_get(ma) : NULL, verbose);
             break;
         case __OVS_TUNNEL_KEY_ATTR_MAX:
         default:
@@ -5872,6 +5945,7 @@ parse_odp_key_mask_attr__(struct parse_odp_context *context, const char *s,
         SCAN_FIELD_NESTED_FUNC("gtpu(", struct gtpu_metadata, gtpu_metadata,
                                gtpu_to_attr);
         SCAN_FIELD_NESTED_FUNC("flags(", uint16_t, tun_flags, tun_flags_to_attr);
+
     } SCAN_END_NESTED();
 
     SCAN_SINGLE_PORT("in_port(", uint32_t, OVS_KEY_ATTR_IN_PORT);

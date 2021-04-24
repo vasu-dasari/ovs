@@ -7801,6 +7801,15 @@ dp_execute_cb(void *aux_, struct dp_packet_batch *packets_,
                 struct dp_packet *packet;
                 DP_PACKET_BATCH_FOR_EACH (i, packet, packets_) {
                     packet->md.in_port.odp_port = portno;
+                    /* Save ingress port and ingress vlan to flow_tnl to be
+                     * used for classifying packets over fully specified
+                     * tunnels */
+                    packet->md.tunnel.out_odp_port =
+                        (OVS_FORCE ovs_be32)(aux->flow->in_port.odp_port);
+                    if (aux->flow->vlans[0].tci) {
+                        packet->md.tunnel.vlan_id =
+                            (OVS_FORCE ovs_be16)vlan_tci_to_vid((aux->flow->vlans[0].tci));
+                   }
                 }
 
                 (*depth)++;

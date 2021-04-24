@@ -90,19 +90,12 @@ netdev_tnl_is_header_ipv6(const void *header)
 {
     const struct eth_header *eth;
     eth = header;
-    return eth->eth_type == htons(ETH_TYPE_IPV6);
-}
-
-static inline struct ip_header *
-netdev_tnl_ip_hdr(void *eth)
-{
-    return (void *)((char *)eth + sizeof (struct eth_header));
-}
-
-static inline struct ovs_16aligned_ip6_hdr *
-netdev_tnl_ipv6_hdr(void *eth)
-{
-    return (void *)((char *)eth + sizeof (struct eth_header));
+    if (eth->eth_type == htons(ETH_TYPE_VLAN_8021Q)) {
+        struct vlan_header *vlan = (struct vlan_header *)(eth + 1);
+        return vlan->vlan_next_type == htons(ETH_TYPE_IPV6);
+    } else {
+        return eth->eth_type == htons(ETH_TYPE_IPV6);
+    }
 }
 
 void *
@@ -124,6 +117,9 @@ netdev_tnl_get_src_port(struct dp_packet *packet)
                  tnl_udp_port_min);
 }
 
+void *
+netdev_tnl_eth_extract_tnl_md(struct dp_packet *packet, struct flow_tnl *tnl,
+                             unsigned int *hlen);
 void *
 netdev_tnl_ip_extract_tnl_md(struct dp_packet *packet, struct flow_tnl *tnl,
                              unsigned int *hlen);

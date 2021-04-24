@@ -423,6 +423,361 @@ AT_CHECK([
  n_packets=6, n_bytes=588, ip,nw_dst=192.168.10.30 actions=mod_dl_dst:aa:55:aa:55:00:03,output:30
 ])
 
+OVS_TRAFFIC_VSWITCHD_STOP
+AT_CLEANUP
+
+# ADD_OVS_TUNNEL_WITH_L2([type], [bridge], [port], [key], [remote-addr], [local-addr],
+#                [dst-mac], [src-mac], [out-port], [vlan-id], [tunnel-args]
+#
+# Add an ovs-based fully specified tunnel to bridge 'bridge' with name 'port' and type 'type'
+# Following Tunnel encapsulation parameters are manadatory.
+#   'key' can be tunnel identifier or 'flow'
+#   'remote-addr'/'local-addr' can be tunnel dst/src ip  or 'flow'
+#   'out-port' name of outgoing port
+#   'src-mac'/'dst-mac' source and destination mac addresses
+#   'vlan-id' optional, vlan id in tunnel ecapsulation
+#
+m4_define([ADD_OVS_TUNNEL_WITH_L2],
+   [
+      vlan_opt=""
+      if test -n "$10"; then
+        vlan_opt=$(echo options:vlan_id=$10)
+      fi
+      AT_CHECK([ovs-vsctl add-port $2 $3 -- \
+              set int $3 type=$1 options:key=$4 \
+              options:remote_ip=$5 options:local_ip=$6 \
+              options:dst_mac=$7 options:src_mac=$8 \
+              options:out_port=$9 $vlan_opt $11])
+   ]
+)
+
+AT_SETUP([datapath - ping over fully specified vxlan tunnel])
+OVS_CHECK_VXLAN()
+
+OVS_TRAFFIC_VSWITCHD_START()
+ADD_BR([br-underlay])
+
+ADD_NAMESPACES(at_fp0, at_ap0)
+
+ADD_VETH(ap0, at_ap0, br0, "10.1.1.100/24", "00:00:10:01:01:64")
+
+AT_CHECK([ovs-vsctl set bridge br-underlay  other-config:hwaddr="00:00:00:00:00:01"])
+AT_CHECK([ip addr add dev br-underlay "172.31.1.100/24"])
+
+AT_CHECK([ovs-ofctl add-flow br0 "priority=0,actions=normal"])
+AT_CHECK([ovs-ofctl add-flow br-underlay "priority=0,actions=normal"])
+
+ADD_VETH(fp0, at_fp0, br-underlay, "172.31.1.1/24", "00:00:00:31:01:01")
+NS_CHECK_EXEC([at_fp0], [arp -s 172.31.1.100 00:00:00:00:00:01])
+ADD_NATIVE_TUNNEL([vxlan], [at_vxlan_fp0], [at_fp0], [172.31.1.100], [10.1.1.1/24],
+                  [id 1 dstport 4789], [address "00:00:10:01:01:01"])
+ADD_OVS_TUNNEL_WITH_L2([vxlan], [br0], [at_vxlan0], [1], [172.31.1.1], [172.31.1.100],
+                        [00:00:00:31:01:01], [00:00:00:00:00:01], ["ovs-fp0"])
+
+dnl Verify
+NS_CHECK_EXEC([at_fp0], [ping -q -c 3 -i 0.3 -w 2 10.1.1.100 | FORMAT_PING], [0], [dnl
+3 packets transmitted, 3 received, 0% packet loss, time 0ms
+])
+NS_CHECK_EXEC([at_ap0], [ping -q -c 3 -i 0.3 -w 2 10.1.1.1 | FORMAT_PING], [0], [dnl
+3 packets transmitted, 3 received, 0% packet loss, time 0ms
+])
+
+OVS_TRAFFIC_VSWITCHD_STOP
+AT_CLEANUP
+
+AT_SETUP([datapath - ping over fully specified vxlan tunnel with vlan])
+OVS_CHECK_VXLAN()
+
+OVS_TRAFFIC_VSWITCHD_START()
+ADD_BR([br-underlay])
+
+ADD_NAMESPACES(at_fp0, at_ap0)
+
+AT_CHECK([ovs-vsctl set bridge br-underlay  other-config:hwaddr="00:00:00:00:00:01"])
+
+AT_CHECK([ovs-ofctl add-flow br0 "priority=0,actions=normal"])
+AT_CHECK([ovs-ofctl add-flow br-underlay "priority=0,actions=normal"])
+
+ADD_VETH(ap0, at_ap0, br0, "10.1.1.100/24", "00:00:10:01:01:64")
+
+ADD_VETH(fp0, at_fp0, br-underlay, "1.1.1.1/24", "00:00:00:31:01:01")
+ADD_VLAN(fp0, at_fp0, 100, "172.31.1.1/24")
+NS_CHECK_EXEC([at_fp0], [arp -s 172.31.1.100 00:00:00:00:00:01])
+
+ADD_OVS_TUNNEL_WITH_L2([vxlan], [br0], [at_vxlan0], [1], [172.31.1.1], [172.31.1.100],
+                        [00:00:00:31:01:01], [00:00:00:00:00:01], ["ovs-fp0"], [100])
+ADD_NATIVE_TUNNEL([vxlan], [at_vxlan_fp0], [at_fp0], [172.31.1.100], [10.1.1.1/24],
+                  [id 1 dstport 4789], [address "00:00:10:01:01:01"])
+
+dnl Verify
+NS_CHECK_EXEC([at_ap0], [ping -q -c 3 -i 0.3 -w 2 10.1.1.1 | FORMAT_PING], [0], [dnl
+3 packets transmitted, 3 received, 0% packet loss, time 0ms
+])
+NS_CHECK_EXEC([at_fp0], [ping -q -c 3 -i 0.3 -w 2 10.1.1.100 | FORMAT_PING], [0], [dnl
+3 packets transmitted, 3 received, 0% packet loss, time 0ms
+])
+
+OVS_TRAFFIC_VSWITCHD_STOP
+AT_CLEANUP
+
+AT_SETUP([datapath - ping over fully specified vxlan tunnel all-in-one])
+
+###############################################
+#  VxLAN Setup demonstrating use cases
+#
+#          A1 A2 A3 A4 A5 A6
+#          +  +  +  +  +  +
+#          |  |  |  |  |  |
+#        +-+--+--+--+--+--+-+
+#        |      at_ap0      |
+#        +---------+--------+
+#                  |
+#     +-------------------------+
+#     |         ovs-ap0         |
+#     |           ovs           |
+#     |          ovs-fp0        |
+#     +------------+------------+
+#                  |
+#          +-------+-------+     +-------------+
+#          |   at_fp0      +-----+    at_fp1   |
+#          +-+---+---+---+-+     +---+-----+---+
+#            |   |   |   |           |     |
+#            +   +   +   +           +     +
+#            B1  B2  B3  B4          B5    B6
+#
+#
+#   Endpoint Connectivity across OvS
+#      Cxn      Tunnel   Description
+#     -----------------------------------------------------------------------
+#      A1-B1    a1_b1    Regular tunnel using native routing
+#      A2-B2    a2_b2    Fully specified tunnel
+#      A3-B3    a3_b3    Same as A2-B2 with tunnel transported on vlan
+#      A4-B4    a4_b4    Fully specified tunnel deriving IP and VNI from flow
+#      A5-B5    a5_b5    Fully specified tunnel with vlan sharing same egress port ovs-fp0
+#      A6-B6    a6_b6    Same as A5-B5 with vlan
+#
+####################################################
+
+OVS_CHECK_VXLAN()
+
+OVS_TRAFFIC_VSWITCHD_START()
+ADD_BR([br1])
+
+ADD_NAMESPACES(at_ap0, at_fp0, at_fp1)
+
+AT_CHECK([ovs-vsctl set bridge br1  other-config:hwaddr="00:00:00:00:00:01"])
+AT_CHECK([ip addr add dev br1 "172.31.1.100/24"])
+AT_CHECK([ip link set dev br1 up])
+
+AT_CHECK([ovs-ofctl add-flow br0 "priority=0,actions=normal"])
+AT_CHECK([ovs-ofctl add-flow br1 "priority=0,actions=normal"])
+
+dnl AT_CHECK([ovs-appctl vlog/set dpif_netdev:dbg ofproto_dpif_upcall:dbg tunnel:dbg ofproto_dpif_xlate:dbg])
+
+dnl ##############################################################
+dnl ## Configure OvS and namespaces
+dnl ##############################################################
+
+dnl ### Setup simple bridge connectivity between at_fp0 and at_fp1 ###
+
+dnl veth setup
+ADD_VETH(fp0, at_fp0, br1, "172.31.1.1/24", "00:00:00:31:01:01")
+
+dnl # Create veth between at_fp0 and at_fp1
+AT_CHECK([ip link add patch_fp0 type veth peer name patch_fp1])
+AT_CHECK([ip link set dev patch_fp0 netns at_fp0 up])
+AT_CHECK([ip link set dev patch_fp1 netns at_fp1 up])
+
+dnl # On at_fp0 create bridge between fp0 and patch_fp0
+NS_CHECK_EXEC([at_fp0], [ip link add name patch-br type bridge])
+NS_CHECK_EXEC([at_fp0], [ip link set patch_fp0 master patch-br up])
+NS_CHECK_EXEC([at_fp0], [ip link set fp0 master patch-br up])
+NS_CHECK_EXEC([at_fp0], [ip addr add dev patch-br 172.31.10.1/24])
+NS_CHECK_EXEC([at_fp0], [ip link set dev patch-br mtu 1450 up])
+NS_CHECK_EXEC([at_fp0], [arp -s 172.31.1.100 00:00:00:00:00:01])
+
+dnl # Setup at_fp1
+NS_CHECK_EXEC([at_fp1], [ip link set dev patch_fp1 netns at_fp1])
+NS_CHECK_EXEC([at_fp1], [ip link set dev patch_fp1 address "00:00:00:31:05:01"])
+NS_CHECK_EXEC([at_fp1], [ip addr add "172.31.5.1/24" dev patch_fp1])
+NS_CHECK_EXEC([at_fp1], [arp -s 172.31.5.100 00:00:00:00:00:01])
+
+dnl ### Setup VxLAN tunnels from OvS to namespaces ###
+
+dnl # a1 <-> b1 : Regular tunnel using Linux routing
+AT_CHECK([ovs-vsctl add-port br0 a1_b1 -- \
+              set int a1_b1 type=vxlan options:key=1 options:remote_ip=172.31.1.1])
+ADD_NATIVE_TUNNEL([vxlan], [b1], [at_fp0], [172.31.1.100], [10.1.1.1/24],
+                  [id 1 dstport 4789], [address "00:00:10:01:01:01"])
+
+dnl # a2 <-> b2: Fully specified tunnel
+ADD_OVS_TUNNEL_WITH_L2([vxlan], [br0], [a2_b2], [2], [172.31.1.1], [172.31.1.100],
+                        [00:00:00:31:01:01], [00:00:00:00:00:01], ["ovs-fp0"])
+ADD_NATIVE_TUNNEL([vxlan], [b2], [at_fp0], [172.31.1.100], [10.1.2.1/24],
+                  [id 2 dstport 4789], [address "00:00:10:01:02:01"])
+
+dnl # a3 <-> b3: Same as A2-B2 with tunnel transported on vlan
+ADD_OVS_TUNNEL_WITH_L2([vxlan], [br0], [a3_b3], [3], [172.31.3.1], [172.31.3.100],
+                        [00:00:00:31:01:01], [00:00:00:00:00:01], ["ovs-fp0"], 300)
+ADD_VLAN(fp0, at_fp0, 300, "172.31.3.1/24")
+NS_CHECK_EXEC([at_fp0], [arp -s 172.31.3.100 00:00:00:00:00:01])
+ADD_NATIVE_TUNNEL([vxlan], [b3], [at_fp0], [172.31.3.100], [10.1.3.1/24],
+                  [id 3 dstport 4789], [address "00:00:10:01:03:01"])
+
+dnl # a4 <-> b4: Fully specified tunnel deriving IP and VNI from flow
+AT_CHECK([ip addr add dev br1 "172.31.4.100/24"])
+ADD_OVS_TUNNEL_WITH_L2([vxlan], [br0], [a4_b4], [flow], [flow], [flow],
+                        [00:00:00:31:01:01], [00:00:00:00:00:01], ["ovs-fp0"], 400)
+ADD_VLAN(fp0, at_fp0, 400, "172.31.4.1/24")
+NS_CHECK_EXEC([at_fp0], [arp -s 172.31.4.100 00:00:00:00:00:01])
+ADD_NATIVE_TUNNEL([vxlan], [b4], [at_fp0], [172.31.4.100], [10.1.4.1/24],
+                  [id 4 dstport 4789], [address "00:00:10:01:04:01"])
+
+dnl # a5 <-> b5: Fully specified tunnel to a different node
+dnl # with vlan sharing same egress port ovs-fp0
+ADD_OVS_TUNNEL_WITH_L2([vxlan], [br0], [a5_b5], [5], [172.31.5.1], [172.31.5.100],
+                        [00:00:00:31:05:01], [00:00:00:00:00:01], ["ovs-fp0"])
+ADD_NATIVE_TUNNEL([vxlan], [b5], [at_fp1], [172.31.5.100], [10.1.5.1/24],
+                  [id 5 dstport 4789], [address "00:00:10:01:05:01"])
+
+dnl # a6 <-> b6: Same as A5-B5 with vlan
+ADD_OVS_TUNNEL_WITH_L2([vxlan], [br0], [a6_b6], [6], [172.31.6.1], [172.31.6.100],
+                        [00:00:00:31:05:01], [00:00:00:00:00:01], ["ovs-fp0"], 600)
+ADD_VLAN(patch_fp1, at_fp1, 600, "172.31.6.1/24")
+NS_CHECK_EXEC([at_fp1], [arp -s 172.31.6.100 00:00:00:00:00:01])
+ADD_NATIVE_TUNNEL([vxlan], [b6], [at_fp1], [172.31.6.100], [10.1.6.1/24],
+                  [id 6 dstport 4789], [address "00:00:10:01:06:01"])
+
+dnl # Assign some well known ofport numbers to tunnels
+AT_CHECK([
+    ovs-vsctl \
+        -- set interface a1_b1  ofport_request=102    \
+        -- set interface a2_b2  ofport_request=104    \
+        -- set interface a3_b3  ofport_request=106    \
+        -- set interface a4_b4  ofport_request=108    \
+        -- set interface a5_b5  ofport_request=110    \
+        -- set interface a6_b6  ofport_request=112    \
+], [0])
+
+dnl Setup access side ports
+ADD_VETH(a1, at_ap0, br0, "10.1.1.100/24", "00:00:10:01:01:64")
+AT_CHECK([ovs-vsctl set interface ovs-a1 ofport_request=101])
+
+ADD_VETH(a2, at_ap0, br0, "10.1.2.100/24", "00:00:10:01:02:64")
+AT_CHECK([ovs-vsctl set interface ovs-a2 ofport_request=103])
+
+ADD_VETH(a3, at_ap0, br0, "10.1.3.100/24", "00:00:10:01:03:64")
+AT_CHECK([ovs-vsctl set interface ovs-a3 ofport_request=105])
+
+ADD_VETH(a4, at_ap0, br0, "10.1.4.100/24", "00:00:10:01:04:64")
+AT_CHECK([ovs-vsctl set interface ovs-a4 ofport_request=107])
+
+ADD_VETH(a5, at_ap0, br0, "10.1.5.100/24", "00:00:10:01:05:64")
+AT_CHECK([ovs-vsctl set interface ovs-a5 ofport_request=109])
+
+ADD_VETH(a6, at_ap0, br0, "10.1.6.100/24", "00:00:10:01:06:64")
+AT_CHECK([ovs-vsctl set interface ovs-a6 ofport_request=111])
+
+dnl # Define Flow to carry traffic from ovs-a4 over a4_b4
+AT_CHECK([ovs-ofctl add-flow br0 priority=2,in_port=ovs-a4,\
+action='set_field:4->tun_id,set_field:172.31.4.100->tun_src,set_field:172.31.4.1->tun_dst,a4_b4'])
+AT_CHECK([ovs-ofctl add-flow br0 priority=2,in_port=a4_b4,action=ovs-a4])
+
+dnl ##############################################################
+dnl ## Datapath Verification
+dnl ##############################################################
+
+dnl Verify all ports getting created properly
+AT_CHECK([ovs-appctl dpif/show | grep -v hit ], [0], [dnl
+  br0:
+    a1_b1 102/4: (vxlan: key=1, remote_ip=172.31.1.1)
+    a2_b2 104/4: (vxlan: dst_mac=00:00:00:31:01:01, key=2, local_ip=172.31.1.100, out_port=ovs-fp0, remote_ip=172.31.1.1, src_mac=00:00:00:00:00:01)
+    a3_b3 106/4: (vxlan: dst_mac=00:00:00:31:01:01, key=3, local_ip=172.31.3.100, out_port=ovs-fp0, remote_ip=172.31.3.1, src_mac=00:00:00:00:00:01, vlan_id=300)
+    a4_b4 108/4: (vxlan: dst_mac=00:00:00:31:01:01, key=flow, local_ip=flow, out_port=ovs-fp0, remote_ip=flow, src_mac=00:00:00:00:00:01, vlan_id=400)
+    a5_b5 110/4: (vxlan: dst_mac=00:00:00:31:05:01, key=5, local_ip=172.31.5.100, out_port=ovs-fp0, remote_ip=172.31.5.1, src_mac=00:00:00:00:00:01)
+    a6_b6 112/4: (vxlan: dst_mac=00:00:00:31:05:01, key=6, local_ip=172.31.6.100, out_port=ovs-fp0, remote_ip=172.31.6.1, src_mac=00:00:00:00:00:01, vlan_id=600)
+    br0 65534/1: (tap)
+    ovs-a1 101/5: (system)
+    ovs-a2 103/6: (system)
+    ovs-a3 105/7: (system)
+    ovs-a4 107/8: (system)
+    ovs-a5 109/9: (system)
+    ovs-a6 111/10: (system)
+  br1:
+    br1 65534/2: (tap)
+    ovs-fp0 1/3: (system)
+])
+
+dnl Verify all tunnel endpoints created
+AT_CHECK([ovs-appctl ofproto/list-tunnels | sort ], [0], [dnl
+port 4: a1_b1 (vxlan: ::->172.31.1.1, key=0x1, legacy_l2, dp port=4, ttl=64)
+port 4: a2_b2 (vxlan: 172.31.1.100->172.31.1.1, key=0x2, legacy_l2, dp port=4, out_port=3, ttl=64)
+port 4: a3_b3 (vxlan: 172.31.3.100->172.31.3.1, key=0x3, legacy_l2, dp port=4, vlan_id=0x12c, out_port=3, ttl=64)
+port 4: a4_b4 (vxlan: flow->flow, key=flow, legacy_l2, dp port=4, vlan_id=0x190, out_port=3, ttl=64)
+port 4: a5_b5 (vxlan: 172.31.5.100->172.31.5.1, key=0x5, legacy_l2, dp port=4, out_port=3, ttl=64)
+port 4: a6_b6 (vxlan: 172.31.6.100->172.31.6.1, key=0x6, legacy_l2, dp port=4, vlan_id=0x258, out_port=3, ttl=64)
+])
+
+dnl Verify all tunnel ports getting created
+AT_CHECK([ovs-appctl tnl/ports/show -v | grep "172.31" | grep -v Listening | sort ], [0], [dnl
+vxlan_sys_4789 (4) : eth(dst=00:00:00:00:00:01),eth_type(0x0800),ipv4(dst=172.31.1.100,proto=17,frag=no),udp(dst=4789)
+vxlan_sys_4789 (4) : eth(dst=00:00:00:00:00:01),eth_type(0x0800),ipv4(dst=172.31.3.100,proto=17,frag=no),udp(dst=4789)
+vxlan_sys_4789 (4) : eth(dst=00:00:00:00:00:01),eth_type(0x0800),ipv4(dst=172.31.4.100,proto=17,frag=no),udp(dst=4789)
+vxlan_sys_4789 (4) : eth(dst=00:00:00:00:00:01),eth_type(0x0800),ipv4(dst=172.31.5.100,proto=17,frag=no),udp(dst=4789)
+vxlan_sys_4789 (4) : eth(dst=00:00:00:00:00:01),eth_type(0x0800),ipv4(dst=172.31.6.100,proto=17,frag=no),udp(dst=4789)
+])
+
+dnl Start from clean slate
+AT_CHECK([ovs-appctl fdb/flush br0], [0], [dnl
+table successfully flushed
+])
+
+dnl Verify Datapath by ping'ng
+for ip in '10.1.1.1' '10.1.2.1' '10.1.3.1' '10.1.4.1' '10.1.5.1' '10.1.6.1'; do
+    NS_CHECK_EXEC([at_ap0], [ping -q -c 3 -i 0.5 -w 2 $ip | FORMAT_PING], [0], [dnl
+3 packets transmitted, 3 received, 0% packet loss, time 0ms
+])
+done
+
+dnl Verify FDB
+AT_CHECK([
+    ovs-appctl fdb/show br0 | sed 's/[[0-9]]\{1,\}$/?/' | grep -v port | sort -n
+], [0], [dnl
+  101     0  00:00:10:01:01:64    ?
+  102     0  00:00:10:01:01:01    ?
+  103     0  00:00:10:01:02:64    ?
+  104     0  00:00:10:01:02:01    ?
+  105     0  00:00:10:01:03:64    ?
+  106     0  00:00:10:01:03:01    ?
+  109     0  00:00:10:01:05:64    ?
+  110     0  00:00:10:01:05:01    ?
+  111     0  00:00:10:01:06:64    ?
+  112     0  00:00:10:01:06:01    ?
+])
+
+dnl ##############################################################
+dnl Verify packet formats
+dnl #####################
+dnl Inject a packet with unknown destination from ovs-a3, and that packet will
+dnl be flooeded across all tunnel ports, except a4_b4. For a4_b4, tunnel parametes
+dnl are derived from flow and paclets injected to ovs-a3 will not hit the flow.
+dnl So, expect to see 5 packets on ovs-fp0
+dnl ##############################################################
+
+tcpdump -U -i ovs-fp0 greater 300 -c 5 -s 64 -w - > ovs-fp0.pcap &
+NS_CHECK_EXEC([at_ap0], [arp -s 10.1.3.2 00:00:10:01:03:02], [ignore], [ignore])
+NS_CHECK_EXEC([at_ap0], [ping -q -c 3  -i 0.5 -w 2 10.1.3.2 -s 300], [ignore], [ignore])
+
+OVS_WAIT_UNTIL([test `ovs-pcap ovs-fp0.pcap | sort | uniq | wc -l` -ge 5])
+AT_CHECK([ovs-pcap ovs-fp0.pcap > ovs-fp0.pcap.txt 2>&1])
+
+AT_CHECK([sort ovs-fp0.pcap.txt], [0], [dnl
+00000031010100000000000108004500017a000040004011decfac1f0164ac1f0101b91d12b50166000008000000000001000000100103020000100103640800
+00000031010100000000000108004500017a000040004011decfac1f0164ac1f0101b91d12b50166000008000000000002000000100103020000100103640800
+0000003101010000000000018100012c08004500017a000040004011dacfac1f0364ac1f0301b91d12b501660000080000000000030000001001030200001001
+00000031050100000000000108004500017a000040004011d6cfac1f0564ac1f0501b91d12b50166000008000000000005000000100103020000100103640800
+0000003105010000000000018100025808004500017a000040004011d4cfac1f0664ac1f0601b91d12b501660000080000000000060000001001030200001001
+])
 
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
