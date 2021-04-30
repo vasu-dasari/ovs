@@ -39,8 +39,13 @@ COVERAGE_DEFINE(mac_learning_moved);
 int
 mac_entry_age(const struct mac_learning *ml, const struct mac_entry *e)
 {
-    time_t remaining = e->expires - time_now();
-    return ml->idle_time - remaining;
+    /* For static fdb entries, expires would be initialized with INT_MAX */
+    if (INT_MAX == e->expires) {
+        return -1;
+    } else {
+        time_t remaining = e->expires - time_now();
+        return ml->idle_time - remaining;
+    }
 }
 
 static uint32_t
@@ -282,6 +287,18 @@ mac_learning_set_idle_time(struct mac_learning *ml, unsigned int idle_time)
     }
 }
 
+/* Changes the MAC aging timeout of a mac_entry to 'idle_time' seconds. */
+void
+mac_entry_set_idle_time(struct mac_learning *ml, struct eth_addr mac,
+        int vlan, unsigned int idle_time)
+{
+    struct mac_entry *e;
+    e = mac_entry_lookup(ml, mac, vlan);
+    if (e) {
+        e->expires = idle_time;
+    }
+}
+
 /* Sets the maximum number of entries in 'ml' to 'max_entries', adjusting it
  * to be within a reasonable range. */
 void
@@ -348,7 +365,10 @@ mac_learning_insert(struct mac_learning *ml,
         ovs_list_remove(&e->port_lru_node);
         ovs_list_push_back(&e->mlport->port_lrus, &e->port_lru_node);
     }
-    e->expires = time_now() + ml->idle_time;
+    /* Do not update 'expires' for static mac entry */
+    if (e->expires != INT_MAX) {
+        e->expires = time_now() + ml->idle_time;
+    }
 
     return e;
 }

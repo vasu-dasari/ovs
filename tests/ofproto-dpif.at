@@ -6753,6 +6753,46 @@ PORTNAME
         portName=p2
 ])])
 
+AT_SETUP([ofproto-dpif - static MAC programming])
+OVS_VSWITCHD_START([set bridge br0 fail-mode=standalone])
+add_of_ports br0 1 2
+
+arp='eth_type(0x0806),arp(sip=192.168.0.1,tip=192.168.0.2,op=1,sha=50:54:00:00:00:05,tha=00:00:00:00:00:00)'
+
+AT_CHECK([ovs-appctl fdb/add br0 p1 0 50:54:00:00:00:05], [0], [OK
+])
+
+dnl Check for the static MAC entry is programmed
+AT_CHECK([ovs-appctl fdb/show br0], [0], [dnl
+ port  VLAN  MAC                Age
+    1     0  50:54:00:00:00:05   -1
+])
+
+dnl Trace an ARP packet arriving on p1
+OFPROTO_TRACE(
+  [ovs-dummy],
+  [in_port(1),eth(src=50:54:00:00:00:05,dst=ff:ff:ff:ff:ff:ff),$arp],
+  [-generate],
+  [2,100])
+
+dnl Check that age on static MAC entry is not altered because of above learning event
+AT_CHECK([ovs-appctl fdb/show br0], [0], [dnl
+ port  VLAN  MAC                Age
+    1     0  50:54:00:00:00:05   -1
+])
+
+dnl Remove static mac entry
+AT_CHECK([ovs-appctl fdb/del br0 p1 0 50:54:00:00:00:05], [0], [OK
+])
+
+dnl Check that entry is removed
+AT_CHECK([ovs-appctl fdb/show br0], [0], [dnl
+ port  VLAN  MAC                Age
+])
+
+OVS_VSWITCHD_STOP
+AT_CLEANUP
+
 AT_SETUP([ofproto-dpif - basic truncate action])
 OVS_VSWITCHD_START
 add_of_ports br0 1 2 3 4 5

@@ -5865,6 +5865,53 @@ ofproto_unixctl_fdb_show(struct unixctl_conn *conn, int argc OVS_UNUSED,
 }
 
 static void
+ofproto_unixctl_fdb_update(struct unixctl_conn *conn, int argc OVS_UNUSED,
+                         const char *argv[], void *aux OVS_UNUSED)
+{
+    const char *br_name = argv[1];
+    const char *name = argv[2];
+    struct eth_addr mac;
+    uint16_t vlan = atoi(argv[3]);
+    const char *op = (const char *)aux;
+    const struct ofproto_dpif *ofproto;
+    ofp_port_t    in_port = OFPP_NONE;
+    struct ofproto_port ofproto_port;
+    struct dpif_port dpif_port;
+
+    ofproto = ofproto_dpif_lookup_by_name(br_name);
+    if (!ofproto) {
+        unixctl_command_reply_error(conn, "no such bridge");
+        return;
+    }
+
+    if (!eth_addr_from_string(argv[4], &mac)) {
+        unixctl_command_reply_error(conn, "bad MAC address");
+        return;
+    }
+
+    if (dpif_port_query_by_name(ofproto->backer->dpif, name,
+                &dpif_port)) {
+        unixctl_command_reply_error(conn, "no such port");
+        return;
+    }
+    if (ofproto_port_query_by_name(&ofproto->up, name, &ofproto_port)) {
+        unixctl_command_reply_error(conn, "software error, odp port is present but no ofp port");
+        return;
+    }
+    in_port = ofproto_port.ofp_port;
+
+    if (!strcmp(op, "add")) {
+        xlate_add_static_mac_entry(ofproto, in_port, mac, vlan);
+        unixctl_command_reply(conn, "OK");
+    } else if (!strcmp(op, "del")) {
+        xlate_delete_static_mac_entry(ofproto, mac, vlan);
+        unixctl_command_reply(conn, "OK");
+    } else {
+        unixctl_command_reply_error(conn, "software error, unknown op");
+    }
+}
+
+static void
 ofproto_unixctl_fdb_stats_clear(struct unixctl_conn *conn, int argc,
                                 const char *argv[], void *aux OVS_UNUSED)
 {
@@ -6415,6 +6462,10 @@ ofproto_unixctl_init(void)
     }
     registered = true;
 
+    unixctl_command_register("fdb/add", "[bridge port vlan mac]", 4, 4,
+                             ofproto_unixctl_fdb_update, "add");
+    unixctl_command_register("fdb/del", "[bridge port vlan mac]", 4, 4,
+                             ofproto_unixctl_fdb_update, "del");
     unixctl_command_register("fdb/flush", "[bridge]", 0, 1,
                              ofproto_unixctl_fdb_flush, NULL);
     unixctl_command_register("fdb/show", "bridge", 1, 1,

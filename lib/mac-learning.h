@@ -202,6 +202,9 @@ bool mac_learning_set_flood_vlans(struct mac_learning *ml,
 void mac_learning_set_idle_time(struct mac_learning *ml,
                                 unsigned int idle_time)
     OVS_REQ_WRLOCK(ml->rwlock);
+void mac_entry_set_idle_time(struct mac_learning *ml, struct eth_addr src,
+                             int vlan, unsigned int idle_time)
+    OVS_REQ_WRLOCK(ml->rwlock);
 void mac_learning_set_max_entries(struct mac_learning *ml, size_t max_entries)
     OVS_REQ_WRLOCK(ml->rwlock);
 

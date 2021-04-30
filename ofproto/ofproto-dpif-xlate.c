@@ -8128,6 +8128,31 @@ xlate_mac_learning_update(const struct ofproto_dpif *ofproto,
 }
 
 void
+xlate_add_static_mac_entry(const struct ofproto_dpif *ofproto, ofp_port_t in_port,
+                           struct eth_addr dl_src, int vlan)
+{
+    xlate_mac_learning_update(ofproto, in_port, dl_src, vlan, false);
+
+    ovs_rwlock_wrlock(&ofproto->ml->rwlock);
+    mac_entry_set_idle_time(ofproto->ml, dl_src, vlan, INT_MAX);
+    ovs_rwlock_unlock(&ofproto->ml->rwlock);
+}
+
+void
+xlate_delete_static_mac_entry(const struct ofproto_dpif *ofproto,
+                              struct eth_addr dl_src, int vlan)
+{
+    struct mac_entry *e = NULL;
+
+    ovs_rwlock_rdlock(&ofproto->ml->rwlock);
+    e = mac_learning_lookup(ofproto->ml, dl_src, vlan);
+    if (e) {
+        mac_learning_expire(ofproto->ml, e);
+    }
+    ovs_rwlock_unlock(&ofproto->ml->rwlock);
+}
+
+void
 xlate_set_support(const struct ofproto_dpif *ofproto,
                     const struct dpif_backer_support *support)
 {
