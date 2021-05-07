@@ -426,7 +426,7 @@ struct xvlan {
     struct xvlan_single v[FLOW_MAX_VLAN_HEADERS];
 };
 
-#if 0
+#if 1
 #define PRINTF_xlate(fmt, args...) xlate_report(ctx, OFT_DETAIL, "%s:%d: "fmt, __func__, __LINE__, ##args)
 
 static void
@@ -434,7 +434,7 @@ print_odp_actions(struct xlate_ctx *ctx, const char* func, int line);
 #define PRINT_odp_actions(ctx) print_odp_actions(ctx, __func__, __LINE__)
 
 static void
-print_odp_actions(struct xlate_ctx *ctx, const char* func, int line)
+print_odp_actions(struct xlate_ctx *ctx, const char* func OVS_UNUSED, int line OVS_UNUSED)
 {
     struct ds s;
     ds_init(&s);
@@ -446,19 +446,18 @@ print_odp_actions(struct xlate_ctx *ctx, const char* func, int line)
     ds_destroy(&s);
 }
 
-static void print_flow(struct xlate_ctx *ctx, const char* func, int line)
+static void print_flow(struct xlate_ctx *ctx, const char* func OVS_UNUSED, int line OVS_UNUSED)
 {
+    const struct flow* flow OVS_UNUSED = &ctx->xin->flow;
+
     char *s = flow_to_string(&ctx->xin->flow, NULL);
     PRINTF_func(func, line, "flow: %s", s);
     free(s);
     s = flow_to_string(&ctx->base_flow, NULL);
     PRINTF_func(func, line, "base_flow: %s", s);
     free(s);
-    PRINTF_func(func, line, "Output Vlan: original [{0x%04x, 0x%04x}, {0x%04x, 0x%04x}], base: [{0x%04x, 0x%04x}, {0x%04x, 0x%04x}]",
-            ctx->xin->flow.vlans[0].tci, ctx->xin->flow.vlans[0].tpid,
-            ctx->xin->flow.vlans[1].tci, ctx->xin->flow.vlans[1].tpid,
-            ctx->base_flow.vlans[0].tci, ctx->base_flow.vlans[0].tpid,
-            ctx->base_flow.vlans[1].tci, ctx->base_flow.vlans[1].tpid);
+    PRINTF("out_port=%d src_mac="ETH_ADDR_FMT, flow->tunnel.out_odp_port, ETH_ADDR_ARGS(flow->tunnel.src_mac));
+
     print_odp_actions(ctx, func, line);
 }
 #define PRINTF_flow(ctx) print_flow(ctx, __func__, __LINE__)
@@ -1591,9 +1590,11 @@ xlate_lookup_ofproto_(const struct dpif_backer *backer,
         }
     }
 
+    PRINTF("tnl_port_should_receive: %d", tnl_port_should_receive(flow));
     xport = xport_lookup(xcfg, tnl_port_should_receive(flow)
                          ? tnl_port_receive(flow)
                          : odp_port_to_ofport(backer, flow->in_port.odp_port));
+
     if (OVS_UNLIKELY(!xport)) {
         if (errorp) {
             *errorp = (tnl_port_should_receive(flow)
@@ -2979,7 +2980,9 @@ xlate_normal_flood(struct xlate_ctx *ctx, struct xbundle *in_xbundle,
             && xbundle_includes_vlan(xbundle, xvlan)
             && xbundle->floodable
             && !xbundle_mirror_out(ctx->xbridge, xbundle)) {
+            PRINTF("Trace Begin: %s", xbundle->name);
             output_normal(ctx, xbundle, xvlan);
+            PRINTF("Trace End: %s", xbundle->name);
         }
     }
     ctx->nf_output_iface = NF_OUT_FLOOD;
@@ -3080,16 +3083,23 @@ xlate_normal(struct xlate_ctx *ctx)
         entry->normal.dl_src = flow->dl_src;
         entry->normal.vlan = vlan;
         entry->normal.is_gratuitous_arp = is_grat_arp;
+        PRINTF("adding xlate_cache "ETH_ADDR_FMT" is "
+                "on port %d in VLAN %d",
+                ETH_ADDR_ARGS(flow->dl_src), flow->in_port.ofp_port, vlan);
+
     }
+
+    PRINTF_flow(ctx);
+    PRINTF("ctx: out_odp_port %d", ctx->out_odp_port);
 
     /* Determine output bundle. */
     if (ctx->out_odp_port) {
         struct xbundle *out_xbundle;
         struct xport *out_port;
 
-        if ((out_xbundle = lookup_input_bundle(ctx,
-                        odp_port_to_ofp_port(ctx, ctx->out_odp_port),
+        if ((out_xbundle = lookup_input_bundle(ctx, ctx->out_odp_port,
                         &out_port))) {
+
             xlate_report(ctx, OFT_DETAIL, "forwarding to chosen port %s",
                     netdev_get_name(out_port->netdev));
             output_normal(ctx, out_xbundle, &xvlan);
@@ -3225,7 +3235,9 @@ xlate_normal(struct xlate_ctx *ctx)
                 && mac_xbundle != in_xbundle
                 && mac_xbundle->ofbundle != in_xbundle->ofbundle) {
                 xlate_report(ctx, OFT_DETAIL, "forwarding to learned port");
+                PRINTF("Trace Begin: %s, %s", in_xbundle->name, mac_xbundle->name);
                 output_normal(ctx, mac_xbundle, &xvlan);
+                PRINTF("Trace End");
             } else if (!mac_xbundle) {
                 xlate_report(ctx, OFT_WARN,
                              "learned port is unknown, dropping");
@@ -3236,7 +3248,9 @@ xlate_normal(struct xlate_ctx *ctx)
         } else {
             xlate_report(ctx, OFT_DETAIL,
                          "no learned MAC for destination, flooding");
+            PRINTF("Trace Begin: %s", in_xbundle->name);
             xlate_normal_flood(ctx, in_xbundle, &xvlan);
+            PRINTF("Trace End");
         }
     }
 }
@@ -3484,8 +3498,9 @@ get_tnl_spec(struct xlate_ctx *ctx, const struct flow *flow,
         struct xport **out_dev)
 
 {
-    struct xlate_cfg *xcfg = ovsrcu_get(struct xlate_cfg *, &xcfgp);
     struct xport *out_xport;
+
+    PRINTF_flow(ctx);
 
     *src_ip = flow_tnl_src(&flow->tunnel);
     *dst_ip = flow_tnl_dst(&flow->tunnel);
@@ -3499,19 +3514,21 @@ get_tnl_spec(struct xlate_ctx *ctx, const struct flow *flow,
 
     *out_dev = NULL;
 
-    out_xport = xport_lookup(xcfg,
-            odp_port_to_ofport(ctx->xbridge->ofproto->backer,
-                (OVS_FORCE odp_port_t)flow->tunnel.out_odp_port));
+    out_xport = get_ofp_port(ctx->xbridge, 
+            (OVS_FORCE ofp_port_t)flow->tunnel.out_odp_port);
+    PRINTF("%d: out_xport %p", flow->tunnel.out_odp_port, out_xport);
     if (out_xport) {
         *out_dev = get_ofp_port(out_xport->xbridge, OFPP_LOCAL);
         if (!(*out_dev)) {
             return -ENOENT;
         }
+        *src_mac = flow->tunnel.src_mac;
+        *dst_mac = flow->tunnel.dst_mac;
+        return 0;
     }
 
-    *src_mac = flow->tunnel.src_mac;
-    *dst_mac = flow->tunnel.dst_mac;
-    return 0;
+    return -ENOENT;
+
 }
 
 static int
@@ -4414,6 +4431,7 @@ compose_output_action(struct xlate_ctx *ctx, ofp_port_t ofp_port,
 {
     compose_output_action__(ctx, ofp_port, xr, true,
                             is_last_action, truncate);
+    PRINTF_flow(ctx);
 }
 
 static void
@@ -7293,8 +7311,16 @@ xlate_in_init(struct xlate_in *xin, struct ofproto_dpif *ofproto,
     xin->ofproto = ofproto;
     xin->tables_version = version;
     xin->flow = *flow;
+//    {
+//        char *s = flow_to_string(flow, NULL);
+//        PRINTF("upcall_flow: %s", s);
+//        free(s);
+//    }
+
     xin->upcall_flow = flow;
     xin->flow.in_port.ofp_port = in_port;
+    PRINTF("new in_port {%d,%d}", in_port, xin->flow.in_port.odp_port);
+
     xin->flow.actset_output = OFPP_UNSET;
     xin->packet = packet;
     xin->allow_side_effects = packet != NULL;
@@ -7735,6 +7761,12 @@ xlate_actions(struct xlate_in *xin, struct xlate_out *xout)
         goto exit;
     }
 
+    /* For tunnelled interfaces, convert incoming underlay port to ofp_port */
+    PRINTF("out_odp_port: old %d, new %d", flow->tunnel.out_odp_port, odp_port_to_ofp_port(&ctx, flow->tunnel.out_odp_port));
+    if (flow->tunnel.out_odp_port) {
+        flow->tunnel.out_odp_port = odp_port_to_ofp_port(&ctx, flow->tunnel.out_odp_port);
+    }
+
     /* Tunnel metadata in udpif format must be normalized before translation. */
     if (flow->tunnel.flags & FLOW_TNL_F_UDPIF) {
         const struct tun_table *tun_tab = ofproto_get_tun_tab(
@@ -8124,7 +8156,11 @@ xlate_mac_learning_update(const struct ofproto_dpif *ofproto,
         return;
     }
 
-    update_learning_table__(xbridge, xbundle, dl_src, vlan, is_grat_arp);
+    if (!update_learning_table__(xbridge, xbundle, dl_src, vlan, is_grat_arp)) {
+        PRINTF("learned that "ETH_ADDR_FMT" is "
+                            "on port %s in VLAN %d",
+                            ETH_ADDR_ARGS(dl_src), xbundle->name, vlan);
+    }
 }
 
 void

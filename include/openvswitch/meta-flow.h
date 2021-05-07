@@ -339,6 +339,72 @@ enum OVS_PACKED_ENUM mf_field_id {
      */
     MFF_TUN_DST,
 
+    /* "tun_eth_src".
+     *
+     * The source mac address of a tunneled packet.
+     *
+     * For non-tunneled packets, the value is 0.
+     *
+     * Type: MAC.
+     * Maskable: bitwise.
+     * Formatting: Ethernet.
+     * Prerequisites: Ethernet.
+     * Access: read/write.
+     * NXM: NXM_NX_TUN_ETH_SRC(115) since v2.9.
+     * OXM: none.
+     */
+    MFF_TUN_ETH_SRC,
+
+    /* "tun_eth_dst".
+     *
+     * The destination  address of a tunneled packet.
+     *
+     * For non-tunneled packets, the value is 0.
+     *
+     * Type: MAC.
+     * Maskable: bitwise.
+     * Formatting: Ethernet.
+     * Prerequisites: Ethernet.
+     * Access: read/write.
+     * NXM: NXM_NX_TUN_ETH_DST(116) since v2.9.
+     * OXM: none.
+     */
+    MFF_TUN_ETH_DST,
+
+    /* "tun_vlan_id".
+     *
+     * VlanId of encapsulated packet.
+     *
+     * For non-tunneled packets, the value is 0.
+     *
+     * Type: be16 (low 12 bits).
+     * Maskable: bitwise.
+     * Formatting: decimal.
+     * Prerequisites: Ethernet.
+     * Access: read/write.
+     * NXM: NXM_NX_TUN_VLAN_VID(117) since v2.9.
+     * OXM: none.
+     */
+    MFF_TUN_VLAN_VID,
+
+    /* "tun_in_port".
+     *
+     * Openflow port through which tunneled packet ingress on
+     *
+     * 16-bit view of physical or virtual port on which the tunnelled
+     * packet was received
+     *
+     * Type: be32.
+     * Maskable: no.
+     * Formatting: OpenFlow 1.1+ port.
+     * Prerequisites: none.
+     * Access: read/write.
+     * NXM: NXM_NX_TUN_IN_PORT(118) since v2.9.
+     * OXM: none.
+     * OF1.1: exact match.
+     */
+    MFF_TUN_IN_PORT,
+
     /* "tun_ipv6_src".
      *
      * The IPv6 source address in the outer IP header of a tunneled packet.

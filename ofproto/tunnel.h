@@ -26,18 +26,22 @@
  * header information from the kernel. */
 
 struct ovs_action_push_tnl;
+struct ofproto_dpif;
 struct ofport_dpif;
 struct netdev;
 struct netdev_tnl_build_header_params;
 
 void ofproto_tunnel_init(void);
-bool tnl_port_reconfigure(const struct ofport_dpif *, const struct netdev *,
+bool tnl_port_reconfigure(const struct ofproto_dpif *,
+                          const struct ofport_dpif *, const struct netdev *,
                           odp_port_t new_odp_port, odp_port_t old_odp_port,
                           bool native_tnl, const char name[]);
 
-int tnl_port_add(const struct ofport_dpif *, const struct netdev *,
-                 odp_port_t, bool native_tnl, const char name[]);
-void tnl_port_del(const struct ofport_dpif *, odp_port_t);
+int tnl_port_add(const struct ofproto_dpif *, const struct ofport_dpif *,
+                 const struct netdev *, odp_port_t, bool native_tnl,
+                 const char name[]);
+void tnl_port_del(const struct ofproto_dpif *, const struct ofport_dpif *,
+                  odp_port_t);
 
 const struct ofport_dpif *tnl_port_receive(const struct flow *);
 void tnl_wc_init(struct flow *, struct flow_wildcards *);

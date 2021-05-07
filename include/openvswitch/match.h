@@ -127,6 +127,20 @@ void match_set_tun_gtpu_flags_masked(struct match *match, uint8_t flags,
 void match_set_tun_gtpu_msgtype(struct match *match, uint8_t msgtype);
 void match_set_tun_gtpu_msgtype_masked(struct match *match, uint8_t msgtype,
                                        uint8_t mask);
+void match_set_tun_src_mac_masked(struct match *match, 
+                                   const struct eth_addr dl_src,
+                                  const struct eth_addr mask);
+void match_set_tun_src_mac(struct match *match, const struct eth_addr dl_src);
+void match_set_tun_dst_mac_masked(struct match *match, 
+                                   const struct eth_addr dl_dst,
+                                  const struct eth_addr mask);
+void match_set_tun_dst_mac(struct match *match, const struct eth_addr dl_dst);
+void match_set_tun_vlan_vid(struct match *match, ovs_be16 vid);
+void match_set_tun_vlan_vid_masked(struct match *match,
+                                   ovs_be16 vid, ovs_be16 mask);
+void match_set_tun_in_port(struct match *match, ovs_be32 odp_port);
+void match_set_tun_in_port_masked(struct match *match,
+                                  ovs_be32 odp_port, ovs_be32 mask);
 void match_set_in_port(struct match *, ofp_port_t ofp_port);
 void match_set_pkt_mark(struct match *, uint32_t pkt_mark);
 void match_set_pkt_mark_masked(struct match *, uint32_t pkt_mark, uint32_t mask);

@@ -223,13 +223,16 @@ OVS_CHECK_VXLAN()
 OVS_TRAFFIC_VSWITCHD_START()
 ADD_BR([br-underlay])
 
+AT_CHECK([ovs-vsctl set bridge br0  other-config:hwaddr="00:00:00:00:00:01"])
+AT_CHECK([ovs-vsctl set bridge br0  other-config:hwaddr="00:00:00:00:00:02"])
+
 AT_CHECK([ovs-ofctl add-flow br0 "actions=normal"])
 AT_CHECK([ovs-ofctl add-flow br-underlay "actions=normal"])
 
 ADD_NAMESPACES(at_ns0)
 
 dnl Set up underlay link from host into the namespace using veth pair.
-ADD_VETH(p0, at_ns0, br-underlay, "172.31.1.1/24")
+ADD_VETH(p0, at_ns0, br-underlay, "172.31.1.1/24", "00:00:00:31:01:01")
 AT_CHECK([ip addr add dev br-underlay "172.31.1.100/24"])
 AT_CHECK([ip link set dev br-underlay up])
 
@@ -237,7 +240,7 @@ dnl Set up tunnel endpoints on OVS outside the namespace and with a native
 dnl linux device inside the namespace.
 ADD_OVS_TUNNEL([vxlan], [br0], [at_vxlan0], [172.31.1.1], [10.1.1.100/24])
 ADD_NATIVE_TUNNEL([vxlan], [at_vxlan1], [at_ns0], [172.31.1.100], [10.1.1.1/24],
-                  [id 0 dstport 4789])
+                  [id 0 dstport 4789], [address "00:00:10:01:01:01"])
 
 dnl First, check the underlay
 NS_CHECK_EXEC([at_ns0], [ping -q -c 3 -i 0.3 -w 2 172.31.1.100 | FORMAT_PING], [0], [dnl

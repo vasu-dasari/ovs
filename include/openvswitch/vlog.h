@@ -307,7 +307,13 @@ void vlog_usage(void);
 }
 #endif
 
+#define VDASARI_DBG_ON
+#ifdef VDASARI_DBG_ON
 #define PRINTF(fmt, args...) VLOG_INFO("vdasari:%s:%d: "fmt, __func__, __LINE__, ##args)
 #define PRINTF_func(func, line, fmt, args...) VLOG_INFO("vdasari:%s:%d: "fmt, func, line, ##args)
+#else
+#define PRINTF(fmt, args...)
+#define PRINTF_func(func, line, fmt, args...)
+#endif
 
 #endif /* vlog.h */

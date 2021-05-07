@@ -188,6 +188,54 @@ test_hmap_insert_delete(hash_func *hash)
     hmap_destroy(&hmap);
 }
 
+/* Tests basic hmap insertion and deletion. */
+static void
+test_hmap_insert_delete_fdb(hash_func *hash OVS_UNUSED)
+{
+    enum { N_ELEMS = 10 };
+
+    struct fdb_entry {
+        uint8_t mac[6];
+        uint16_t vlan;
+        size_t count;
+        struct hmap_node node;
+    } elements[N_ELEMS];
+    struct hmap hmap;
+    size_t i;
+
+    printf("fdb test\n");
+    hmap_init(&hmap);
+    for (i = 0; i < N_ELEMS; i++) {
+        memset(&elements[i].mac, i, 6);
+        elements[i].vlan = i;
+        elements[i].count = 1;
+        
+        hmap_insert(&hmap, &elements[i].node, hash_words((uint32_t *) &elements[i], 2, 0));
+    }
+
+    {
+        struct fdb_entry *pElem;
+        for (i = 0; i < N_ELEMS; i++) {
+            int j = 0;
+            HMAP_FOR_EACH_WITH_HASH (pElem, node, hash_words((uint32_t *) &elements[i], 2, 0), &hmap) {
+                printf("%d. vlan %d, count %ld\n", j++, elements[i].vlan, pElem->count);
+                pElem->count++;
+            }
+        }
+    }
+    {
+        struct fdb_entry *pElem;
+        for (i = 0; i < N_ELEMS; i++) {
+            int j = 0;
+            HMAP_FOR_EACH_WITH_HASH (pElem, node, hash_words((uint32_t *) &elements[i], 2, 0), &hmap) {
+                printf("%d. vlan %d, count %ld\n", j++, elements[i].vlan, pElem->count);
+                pElem++;
+            }
+        }
+    }
+    hmap_destroy(&hmap);
+}
+
 /* Tests basic hmap_reserve() and hmap_shrink(). */
 static void
 test_hmap_reserve_shrink(hash_func *hash)
@@ -333,6 +381,7 @@ test_hmap_main(int argc OVS_UNUSED, char *argv[] OVS_UNUSED)
     run_test(test_hmap_for_each_safe);
     run_test(test_hmap_reserve_shrink);
     run_test(test_hmap_for_each_pop);
+    test_hmap_insert_delete_fdb(NULL);
     printf("\n");
 }
 
