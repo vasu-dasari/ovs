@@ -33,9 +33,6 @@ jobs:
       matrix:
         include:
           - compiler:     clang
-            opts:         --disable-ssl
-
-          - compiler:     clang
             testsuite:    test
             kernel:       3.16
             asan:         asan
@@ -117,39 +114,3 @@ jobs:
       with:
         name: logs-linux-${{ join(matrix.*, '-') }}
         path: logs.tgz
-
-  build-osx:
-    env:
-      CC:    clang
-      OPTS:  --disable-ssl
-
-    name:    osx clang --disable-ssl
-    runs-on: macos-latest
-    timeout-minutes: 30
-
-    strategy:
-      fail-fast: false
-
-    steps:
-    - name: checkout
-      uses: actions/checkout@v2
-    - name: update PATH
-      run:  |
-        echo "$HOME/bin"        >> $GITHUB_PATH
-        echo "$HOME/.local/bin" >> $GITHUB_PATH
-    - name: set up python
-      uses: actions/setup-python@v2
-      with:
-        python-version: '3.x'
-    - name: install dependencies
-      run:  brew install automake libtool
-    - name: prepare
-      run:  ./.ci/osx-prepare.sh
-    - name: build
-      run:  ./.ci/osx-build.sh
-    - name: upload logs on failure
-      if: failure()
-      uses: actions/upload-artifact@v2
-      with:
-        name: logs-osx-clang---disable-ssl
-        path: config.log
