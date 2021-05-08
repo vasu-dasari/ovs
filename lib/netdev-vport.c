@@ -239,6 +239,10 @@ netdev_vport_destruct(struct netdev *netdev_)
         update_vxlan_global_cfg(netdev_, &netdev->tnl_cfg, NULL);
     }
 
+    if (netdev->tnl_cfg.dl_port_name) {
+        free(netdev->tnl_cfg.dl_port_name);
+    }
+
     free(netdev->peer);
     ovs_mutex_destroy(&netdev->mutex);
 }
@@ -775,25 +779,32 @@ set_tunnel_config(struct netdev *dev_, const struct smap *args, char **errp)
                use them, but they are read by 'ovs-monitor-ipsec'. In order to
                suppress the "unknown %s argument" warning message below, we
                handle them here by ignoring them. */
-        } else if (!strcmp(node->key, "out_port")) {
-            char *out_port_name = node->value;
+        } else if (!strcmp(node->key, "dl_port")) {
+            char *dl_port_name = node->value;
 
-            if (!strcmp(name, out_port_name)) {
-                ds_put_format(&errors, "%s: out_port cannot be self",
-                        out_port_name);
+            if (!strcmp(dl_port_name, "flow")) {
+                tnl_cfg.dl_port_flow = true;
+            } else if (!strcmp(name, dl_port_name)) {
+                ds_put_format(&errors, "%s: dl_port cannot be self",
+                        dl_port_name);
                 err = EINVAL;
                 goto out;
+            } else {
+                tnl_cfg.dl_port_name = xstrdup(dl_port_name);
             }
-            tnl_cfg.out_port_name = xstrdup(out_port_name);
         } else if (!strcmp(node->key, "vlan_id")) {
             char *endptr;
             int vlan_id;
-            vlan_id = strtol(node->value, &endptr, 0);
-            if (*endptr == '\0' && vlan_id == (vlan_id & 0xfff)) {
-                tnl_cfg.vlan_id = vlan_id;
+            if(!strcmp(node->value, "flow")) {
+                tnl_cfg.vlan_id_flow = true;
             } else {
-                ds_put_format(&errors, "%s: invalid vlan_id %s\n", name,
-                        node->value);
+                vlan_id = strtol(node->value, &endptr, 0);
+                if (*endptr == '\0' && vlan_id == (vlan_id & 0xfff)) {
+                    tnl_cfg.vlan_id = vlan_id;
+                } else {
+                    ds_put_format(&errors, "%s: invalid vlan_id %s\n", name,
+                            node->value);
+                }
             }
         } else if (!strcmp(node->key, "src_mac")) {
             if (!eth_addr_from_string(node->value, &tnl_cfg.src_mac)) {
@@ -801,7 +812,9 @@ set_tunnel_config(struct netdev *dev_, const struct smap *args, char **errp)
                         node->value);
             }
         } else if (!strcmp(node->key, "dst_mac")) {
-            if (!eth_addr_from_string(node->value, &tnl_cfg.dst_mac)) {
+            if(!strcmp(node->value, "flow")) {
+                tnl_cfg.dst_mac_flow = true;
+            } else if (!eth_addr_from_string(node->value, &tnl_cfg.dst_mac)) {
                 ds_put_format(&errors, "%s: invalid dst_mac %s\n", name,
                         node->value);
             }
@@ -868,9 +881,10 @@ set_tunnel_config(struct netdev *dev_, const struct smap *args, char **errp)
         err = EINVAL;
         goto out;
     }
-    if (tnl_cfg.out_port_name && (
+    if (tnl_cfg.dl_port_name && (
                 (eth_addr_is_zero(tnl_cfg.src_mac)) ||
-                (eth_addr_is_zero(tnl_cfg.dst_mac)) )) {
+                (eth_addr_is_zero(tnl_cfg.dst_mac) && !tnl_cfg.dst_mac_flow) 
+                )) {
         ds_put_format(&errors,
                        "%s: 'src_mac', 'dst_mac' have "
                        "to be specified\n",
@@ -878,9 +892,9 @@ set_tunnel_config(struct netdev *dev_, const struct smap *args, char **errp)
         err = EINVAL;
         goto out;
     }
-    if (tnl_cfg.vlan_id && (!tnl_cfg.out_port_name)) {
+    if (tnl_cfg.vlan_id && (!tnl_cfg.dl_port_name)) {
         ds_put_format(&errors,
-                       "%s: 'out_port' have to be specified\n", name);
+                       "%s: 'dl_port' have to be specified\n", name);
         err = EINVAL;
         goto out;
     }
@@ -908,16 +922,16 @@ set_tunnel_config(struct netdev *dev_, const struct smap *args, char **errp)
 
     ovs_mutex_lock(&dev->mutex);
 
-    /* out_port_name is a pointer, so if user issues same tnl-cfg as
-     * as the on the db, then let's not create a churn up the stack */
-    if ((dev->tnl_cfg.out_port_name) && (tnl_cfg.out_port_name) &&
-            (!strcmp(dev->tnl_cfg.out_port_name, tnl_cfg.out_port_name))) {
-        free(tnl_cfg.out_port_name);
-        tnl_cfg.out_port_name = dev->tnl_cfg.out_port_name;
+    /* dl_port_name is a pointer, so if user specifies same tnl-cfg as
+     * as the one in the db, then let's not create a churn up the stack */
+    if ((dev->tnl_cfg.dl_port_name) && (tnl_cfg.dl_port_name) &&
+            (!strcmp(dev->tnl_cfg.dl_port_name, tnl_cfg.dl_port_name))) {
+        free(tnl_cfg.dl_port_name);
+        tnl_cfg.dl_port_name = dev->tnl_cfg.dl_port_name;
     }
     if (memcmp(&dev->tnl_cfg, &tnl_cfg, sizeof tnl_cfg)) {
-        if (dev->tnl_cfg.out_port_name != tnl_cfg.out_port_name) {
-            free(dev->tnl_cfg.out_port_name);
+        if (dev->tnl_cfg.dl_port_name != tnl_cfg.dl_port_name) {
+            free(dev->tnl_cfg.dl_port_name);
         }
         dev->tnl_cfg = tnl_cfg;
         tunnel_check_status_change__(dev);
@@ -933,8 +947,8 @@ out:
         VLOG_WARN("%s", ds_cstr(&errors));
         if (err) {
             *errp = ds_steal_cstr(&errors);
-            if (tnl_cfg.out_port_name) {
-                free(tnl_cfg.out_port_name);
+            if (tnl_cfg.dl_port_name) {
+                free(tnl_cfg.dl_port_name);
             }
         }
     }
@@ -1079,17 +1093,23 @@ get_tunnel_config(const struct netdev *dev, struct smap *args)
                 ETH_ADDR_ARGS(tnl_cfg.src_mac));
     }
 
-    if (!eth_addr_is_zero(tnl_cfg.dst_mac)) {
+    if (tnl_cfg.dst_mac_flow) {
+        smap_add(args, "dst_mac", "flow");
+    } else if (!eth_addr_is_zero(tnl_cfg.dst_mac)) {
         smap_add_format(args, "dst_mac", ETH_ADDR_FMT,
                 ETH_ADDR_ARGS(tnl_cfg.dst_mac));
     }
 
-    if (tnl_cfg.vlan_id) {
+    if (tnl_cfg.vlan_id_flow) {
+        smap_add(args, "vlan_id", "flow");
+    } else if (tnl_cfg.vlan_id) {
         smap_add_format(args, "vlan_id", "%d", tnl_cfg.vlan_id);
     }
 
-    if (tnl_cfg.out_port_name) {
-        smap_add_format(args, "out_port", "%s", tnl_cfg.out_port_name);
+    if (tnl_cfg.dl_port_flow) {
+        smap_add(args, "dl_port", "flow");
+    } else if (tnl_cfg.dl_port_name) {
+        smap_add_format(args, "dl_port", "%s", tnl_cfg.dl_port_name);
     }
 
     return 0;

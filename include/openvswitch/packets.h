@@ -46,10 +46,10 @@ struct flow_tnl {
     uint8_t gtpu_flags;
     uint8_t gtpu_msgtype;
 
-    struct eth_addr src_mac;
-    struct eth_addr dst_mac;
+    struct eth_addr eth_src;
+    struct eth_addr eth_dst;
     ovs_be16 vlan_id;
-    ovs_be32 out_odp_port;
+    ovs_be32 dl_port;
 
     uint8_t pad1[6];     /* Pad to 64 bits. */
     struct tun_metadata metadata;

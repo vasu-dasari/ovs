@@ -1866,25 +1866,40 @@ ovs-ofctl add-flow br-int 'in_port=3,tun_src=192.168.1.1,tun_id=5001 actions=1'
 
         <dt>PN</dt>
         <dd>If 1, indicates the presence of a meaningful value of the N-PDU
-        Number field.</dd>
+            Number field.
+        </dd>
       </dl>
     </field>
 
-    <field id="MFF_TUN_GTPU_MSGTYPE" title="GTP-U Message Type">
-      This field indicates whether it's a signalling message used for path
-      management, or a user plane message which carries the original packet.
-      The complete range of message types can be referred to [3GPP TS 29.281].
-    </field>
+      <field id="MFF_TUN_GTPU_MSGTYPE" title="GTP-U Message Type">
+          This field indicates whether it's a signalling message used for path
+          management, or a user plane message which carries the original packet.
+          The complete range of message types can be referred to [3GPP TS 29.281].
+      </field>
 
-    <h2>Geneve Fields</h2>
+      <field id="MFF_TUN_ETH_SRC" title="Source Mac Address of Tunneled packet">
+          The source mac address of tunneled packet.
+      </field>
+      <field id="MFF_TUN_ETH_DST" title="Destination Mac Address of Tunneled packet">
+          The source mac address of tunneled packet.
+      </field>
+      <field id="MFF_TUN_VLAN_ID" title="Vlan Id of Tunneled packet">
+          The vlan id in tunneled packet.
+      </field>
+      <field id="MFF_TUN_DL_PORT" title="Datalink port of Tunneled packet">
+          The datalink port on whuch tunnelled packet has ingress on or to
+          be egress out of.
+      </field>
 
-    <p>
-      These fields provide access to additional features in the Geneve
-      tunneling protocol [Geneve].  Their names are somewhat generic in the
-      hope that the same fields could be reused for other protocols in the
-      future; for example, the NSH protocol [NSH] supports TLV options whose
-      form is identical to that for Geneve options.
-    </p>
+      <h2>Geneve Fields</h2>
+
+      <p>
+          These fields provide access to additional features in the Geneve
+          tunneling protocol [Geneve]. Their names are somewhat generic in the
+          hope that the same fields could be reused for other protocols in the
+          future; for example, the NSH protocol [NSH] supports TLV options whose
+          form is identical to that for Geneve options.
+      </p>
 
     <field id="MFF_TUN_METADATA0" title="Generic Tunnel Option 0">
       <p>

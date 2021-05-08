@@ -396,9 +396,9 @@ struct xlate_ctx {
      * state from the datapath should be honored after thawing. */
     bool conntracked;
 
-    /* The egress port that needs to be used regardless of what mac-learning
-     * module may or not have Mac entry */
-    odp_port_t out_odp_port;
+    /* The egress port that needs to be used for tunnnel egress regardless of
+     * what mac-learning module may or not have Mac entry */
+    ovs_be32 tun_dl_port;
 
     /* Pointer to an embedded NAT action in a conntrack action, or NULL. */
     struct ofpact_nat *ct_nat_action;
@@ -3045,21 +3045,21 @@ xlate_normal(struct xlate_ctx *ctx)
     }
 
     /* Determine output bundle. */
-    if (ctx->out_odp_port) {
+    if (ctx->tun_dl_port) {
         struct xbundle *out_xbundle;
         struct xport *out_port;
 
         if ((out_xbundle = lookup_input_bundle(ctx,
-                        odp_port_to_ofp_port(ctx, ctx->out_odp_port),
+                        (OVS_FORCE ofp_port_t)ctx->tun_dl_port,
                         &out_port))) {
             xlate_report(ctx, OFT_DETAIL, "forwarding to chosen port %s",
                     netdev_get_name(out_port->netdev));
             output_normal(ctx, out_xbundle, &xvlan);
         } else {
             xlate_report(ctx, OFT_WARN, "chosen port %d not found",
-                    ctx->out_odp_port);
+                    ctx->tun_dl_port);
         }
-        ctx->out_odp_port = 0;
+        ctx->tun_dl_port = 0;
     } else if (mcast_snooping_enabled(ctx->xbridge->ms)
         && !eth_addr_is_broadcast(flow->dl_dst)
         && eth_addr_is_multicast(flow->dl_dst)
@@ -3441,39 +3441,38 @@ process_special(struct xlate_ctx *ctx, const struct xport *xport)
 
 static int
 get_tnl_spec(struct xlate_ctx *ctx, const struct flow *flow,
-        struct eth_addr *dst_mac, struct eth_addr *src_mac,
-        struct in6_addr *dst_ip, struct in6_addr *src_ip,
+        struct eth_addr *eth_dst, struct eth_addr *eth_src,
+        struct in6_addr *ip_dst, struct in6_addr *ip_src,
         struct xport **out_dev)
 
 {
-    struct xlate_cfg *xcfg = ovsrcu_get(struct xlate_cfg *, &xcfgp);
     struct xport *out_xport;
 
-    *src_ip = flow_tnl_src(&flow->tunnel);
-    *dst_ip = flow_tnl_dst(&flow->tunnel);
-    if ( !flow->tunnel.out_odp_port ||
-            !ipv6_addr_is_set(src_ip) ||
-            !ipv6_addr_is_set(dst_ip) ||
-            eth_addr_is_zero(flow->tunnel.src_mac) ||
-            eth_addr_is_zero(flow->tunnel.dst_mac)) {
+    *ip_src = flow_tnl_src(&flow->tunnel);
+    *ip_dst = flow_tnl_dst(&flow->tunnel);
+    if ( !flow->tunnel.dl_port ||
+            !ipv6_addr_is_set(ip_src) ||
+            !ipv6_addr_is_set(ip_dst) ||
+            eth_addr_is_zero(flow->tunnel.eth_src) ||
+            eth_addr_is_zero(flow->tunnel.eth_dst)) {
         return -ENOENT;
     }
 
     *out_dev = NULL;
 
-    out_xport = xport_lookup(xcfg,
-            odp_port_to_ofport(ctx->xbridge->ofproto->backer,
-                (OVS_FORCE odp_port_t)flow->tunnel.out_odp_port));
+    out_xport = get_ofp_port(ctx->xbridge,
+            (OVS_FORCE ofp_port_t)flow->tunnel.dl_port);
     if (out_xport) {
         *out_dev = get_ofp_port(out_xport->xbridge, OFPP_LOCAL);
         if (!(*out_dev)) {
             return -ENOENT;
         }
+        *eth_src = flow->tunnel.eth_src;
+        *eth_dst = flow->tunnel.eth_dst;
+        return 0;
     }
 
-    *src_mac = flow->tunnel.src_mac;
-    *dst_mac = flow->tunnel.dst_mac;
-    return 0;
+    return -ENOENT;
 }
 
 static int
@@ -3697,7 +3696,7 @@ native_tunnel_output(struct xlate_ctx *ctx, const struct xport *xport,
     }
 
     if (!get_tnl_spec(ctx, flow, &dmac, &smac, &d_ip6, &s_ip6, &out_dev)) {
-        ctx->out_odp_port = (OVS_FORCE odp_port_t)flow->tunnel.out_odp_port;
+        ctx->tun_dl_port = (OVS_FORCE ovs_be32)flow->tunnel.dl_port;
         xlate_report(ctx, OFT_DETAIL, "tunneling to %s via %s",
                 ipv6_string_mapped(buf_dip6, &d_ip6),
                 netdev_get_name(out_dev->netdev));
@@ -4168,7 +4167,8 @@ xport_has_ip(const struct xport *xport)
         free(ip_addr);
         free(mask);
     }
-    return n_in6 ? true : false;
+    // Vasu Revisit here
+    return n_in6 ? true : true;
 }
 
 static bool
@@ -7658,7 +7658,7 @@ xlate_actions(struct xlate_in *xin, struct xlate_out *xout)
 
         .ct_nat_action = NULL,
 
-        .out_odp_port = 0,
+        .tun_dl_port = 0,
 
         .action_set_has_group = false,
         .action_set = OFPBUF_STUB_INITIALIZER(action_set_stub),
@@ -7760,6 +7760,12 @@ xlate_actions(struct xlate_in *xin, struct xlate_out *xout)
                            flow->recirc_id);
         ctx.error = XLATE_NO_RECIRCULATION_CONTEXT;
         goto exit;
+    }
+
+    /* For tunnelled interfaces, convert incoming underlay port to ofp_port */
+    if (flow->tunnel.dl_port) {
+        flow->tunnel.dl_port = (OVS_FORCE ovs_be32)odp_port_to_ofp_port(
+                &ctx, (OVS_FORCE odp_port_t)flow->tunnel.dl_port);
     }
 
     /* Tunnel metadata in udpif format must be normalized before translation. */
@@ -8163,6 +8169,9 @@ xlate_mac_learning_update(const struct ofproto_dpif *ofproto,
                             xbundle, dl_src, vlan, is_grat_arp);
 }
 
+bool xlate_add_static_mac_entry(const struct ofproto_dpif *,
+                                ofp_port_t in_port,
+                                struct eth_addr dl_src, int vlan);
 bool
 xlate_add_static_mac_entry(const struct ofproto_dpif *ofproto,
                            ofp_port_t in_port,

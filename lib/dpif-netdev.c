@@ -8106,7 +8106,9 @@ dp_execute_cb(void *aux_, struct dp_packet_batch *packets_,
                     /* Save ingress port and ingress vlan to flow_tnl to be
                      * used for classifying packets over fully specified
                      * tunnels */
-                    packet->md.tunnel.out_odp_port =
+                    packet->md.tunnel.eth_src = aux->flow->dl_src;
+                    packet->md.tunnel.eth_src = aux->flow->dl_dst;
+                    packet->md.tunnel.dl_port =
                         (OVS_FORCE ovs_be32)(aux->flow->in_port.odp_port);
                     if (aux->flow->vlans[0].tci) {
                         packet->md.tunnel.vlan_id =

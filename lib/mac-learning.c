@@ -358,6 +358,11 @@ mac_learning_insert__(struct mac_learning *ml, const struct eth_addr src_mac,
         }
     } else {
         ovs_list_remove(&e->lru_node);
+
+        /* Do not update 'expires' for static mac entry */
+        if (e->expires != INT_MAX) {
+            e->expires = time_now() + ml->idle_time;
+        }
     }
 
     /* Mark 'e' as recently used. */

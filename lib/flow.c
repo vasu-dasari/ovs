@@ -1275,6 +1275,18 @@ flow_get_metadata(const struct flow *flow, struct match *flow_metadata)
     if (flow->tunnel.gtpu_msgtype) {
         match_set_tun_gtpu_msgtype(flow_metadata, flow->tunnel.gtpu_msgtype);
     }
+    if (flow->tunnel.dl_port) {
+        match_set_tun_dl_port(flow_metadata, flow->tunnel.dl_port);
+    }
+    if (flow->tunnel.vlan_id) {
+        match_set_tun_vlan_id(flow_metadata, flow->tunnel.vlan_id);
+    }
+    if (!eth_addr_is_zero(flow->tunnel.eth_src)) {
+        match_set_tun_eth_src(flow_metadata, flow->tunnel.eth_src);
+    }
+    if (!eth_addr_is_zero(flow->tunnel.eth_dst)) {
+        match_set_tun_eth_dst(flow_metadata, flow->tunnel.eth_dst);
+    }
     tun_metadata_get_fmd(&flow->tunnel, flow_metadata);
     if (flow->metadata != htonll(0)) {
         match_set_metadata(flow_metadata, flow->metadata);
@@ -1838,6 +1850,10 @@ flow_wildcards_init_for_packet(struct flow_wildcards *wc,
         WC_MASK_FIELD(wc, tunnel.erspan_hwid);
         WC_MASK_FIELD(wc, tunnel.gtpu_flags);
         WC_MASK_FIELD(wc, tunnel.gtpu_msgtype);
+        WC_MASK_FIELD(wc, tunnel.dl_port);
+        WC_MASK_FIELD(wc, tunnel.eth_src);
+        WC_MASK_FIELD(wc, tunnel.eth_dst);
+        WC_MASK_FIELD(wc, tunnel.vlan_id);
 
         if (!(flow->tunnel.flags & FLOW_TNL_F_UDPIF)) {
             if (flow->tunnel.metadata.present.map) {

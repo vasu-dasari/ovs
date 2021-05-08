@@ -27,6 +27,15 @@
 #include "tun-metadata.h"
 #include "openvswitch/nsh.h"
 
+static void
+set_eth_masked(const struct eth_addr value_src,
+               const struct eth_addr mask_src,
+               struct eth_addr *value_dst, struct eth_addr *mask_dst);
+static void
+set_eth(const struct eth_addr value_src,
+        struct eth_addr *value_dst,
+        struct eth_addr *mask_dst);
+
 /* Converts the flow in 'flow' into a match in 'match', with the given
  * 'wildcards'. */
 void
@@ -400,6 +409,61 @@ void
 match_set_tun_gtpu_msgtype(struct match *match, uint8_t msgtype)
 {
     match_set_tun_gtpu_msgtype_masked(match, msgtype, UINT8_MAX);
+}
+
+void
+match_set_tun_eth_src_masked(struct match *match,
+                        const struct eth_addr dl_src,
+                        const struct eth_addr mask)
+{
+    set_eth_masked(dl_src, mask, &match->flow.tunnel.eth_src, &match->wc.masks.tunnel.eth_src);
+}
+
+void
+match_set_tun_eth_src(struct match *match, const struct eth_addr dl_src)
+{
+    set_eth(dl_src, &match->flow.tunnel.eth_src, &match->wc.masks.tunnel.eth_src);
+}
+
+void
+match_set_tun_eth_dst_masked(struct match *match,
+                        const struct eth_addr dl_dst,
+                        const struct eth_addr mask)
+{
+    set_eth_masked(dl_dst, mask, &match->flow.tunnel.eth_dst, &match->wc.masks.tunnel.eth_dst);
+}
+
+void
+match_set_tun_eth_dst(struct match *match, const struct eth_addr dl_dst)
+{
+    set_eth(dl_dst, &match->flow.tunnel.eth_dst, &match->wc.masks.tunnel.eth_dst);
+}
+
+void
+match_set_tun_vlan_id(struct match *match, ovs_be16 vlan_id)
+{
+    match_set_tun_vlan_id_masked(match, vlan_id, htons(VLAN_VID_MASK | VLAN_CFI));
+}
+
+
+void
+match_set_tun_vlan_id_masked(struct match *match, ovs_be16 vlan_id, ovs_be16 mask)
+{
+    match->wc.masks.tunnel.vlan_id = vlan_id;
+    match->flow.tunnel.vlan_id = mask & vlan_id;
+}
+
+void
+match_set_tun_dl_port(struct match *match, ovs_be32 dl_port)
+{
+    match_set_tun_dl_port_masked(match, dl_port, OVS_BE32_MAX);
+}
+
+void
+match_set_tun_dl_port_masked(struct match *match, ovs_be32 dl_port, ovs_be32 mask)
+{
+    match->wc.masks.tunnel.dl_port = mask;
+    match->flow.tunnel.dl_port = dl_port & mask;
 }
 
 void
@@ -1398,13 +1462,13 @@ format_flow_tunnel(struct ds *s, const struct match *match)
                             FLOW_TNL_F_MASK);
         ds_put_char(s, ',');
     }
-    if (wc->masks.tunnel.out_odp_port) {
-        ds_put_format(s, "tun_out_port=%"PRIu32",", tnl->out_odp_port);
+    if (wc->masks.tunnel.dl_port) {
+        ds_put_format(s, "tun_dl_port=%"PRIu32",", tnl->dl_port);
     }
-    format_eth_masked(s, "tun_dl_src", tnl->src_mac, wc->masks.tunnel.src_mac);
-    format_eth_masked(s, "tun_dl_dst", tnl->dst_mac, wc->masks.tunnel.dst_mac);
+    format_eth_masked(s, "tun_eth_src", tnl->eth_src, wc->masks.tunnel.eth_src);
+    format_eth_masked(s, "tun_eth_dst", tnl->eth_dst, wc->masks.tunnel.eth_dst);
     if (wc->masks.tunnel.vlan_id) {
-        ds_put_format(s, "tun_dl_vlan=%"PRIu16",", tnl->vlan_id);
+        ds_put_format(s, "tun_vlan=%"PRIu16",", tnl->vlan_id);
     }
     tun_metadata_match_format(s, match);
 }
