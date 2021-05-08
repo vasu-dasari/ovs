@@ -4044,10 +4044,10 @@ format_odp_tun_attr(const struct nlattr *attr, const struct nlattr *mask_attr,
                     ma ? nl_attr_get(ma) : NULL, verbose);
             break;
         case OVS_TUNNEL_KEY_ATTR_ETH_SRC:
-            format_eth(ds, "dl_src", nl_attr_get_eth_addr(a), NULL, verbose);
+            format_eth(ds, "dl_src", nl_attr_get_eth_addr(a), ma ? nl_attr_get(ma) : NULL, verbose);
             break;
         case OVS_TUNNEL_KEY_ATTR_ETH_DST:
-            format_eth(ds, "dl_dst", nl_attr_get_eth_addr(a), NULL, verbose);
+            format_eth(ds, "dl_dst", nl_attr_get_eth_addr(a), ma ? nl_attr_get(ma) : NULL, verbose);
             break;
         case OVS_TUNNEL_KEY_ATTR_VLAN_ID:
             format_be16(ds, "vlan_id", nl_attr_get_be16(a),

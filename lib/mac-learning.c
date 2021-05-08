@@ -353,10 +353,16 @@ mac_learning_insert(struct mac_learning *ml,
         e->vlan = vlan;
         e->grat_arp_lock = TIME_MIN;
         e->mlport = NULL;
+        e->expires = time_now() + ml->idle_time;
         COVERAGE_INC(mac_learning_learned);
         ml->total_learned++;
     } else {
         ovs_list_remove(&e->lru_node);
+
+        /* Do not update 'expires' for static mac entry */
+        if (e->expires != INT_MAX) {
+            e->expires = time_now() + ml->idle_time;
+        }
     }
 
     /* Mark 'e' as recently used. */
@@ -364,10 +370,6 @@ mac_learning_insert(struct mac_learning *ml,
     if (e->mlport) {
         ovs_list_remove(&e->port_lru_node);
         ovs_list_push_back(&e->mlport->port_lrus, &e->port_lru_node);
-    }
-    /* Do not update 'expires' for static mac entry */
-    if (e->expires != INT_MAX) {
-        e->expires = time_now() + ml->idle_time;
     }
 
     return e;

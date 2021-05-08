@@ -129,9 +129,16 @@ struct netdev_tunnel_config {
     bool dont_fragment;
     enum netdev_pt_mode pt_mode;
 
+    bool src_mac_flow;
     struct eth_addr src_mac;
+
+    bool dst_mac_flow;
     struct eth_addr dst_mac;
+
+    bool vlan_id_flow;
     uint16_t vlan_id;
+
+    bool out_port_flow;
     char *out_port_name;
 
     bool set_seq;

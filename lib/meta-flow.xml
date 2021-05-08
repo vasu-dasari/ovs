@@ -1876,6 +1876,19 @@ ovs-ofctl add-flow br-int 'in_port=3,tun_src=192.168.1.1,tun_id=5001 actions=1'
       The complete range of message types can be referred to [3GPP TS 29.281].
     </field>
 
+    <field id="MFF_TUN_ETH_SRC" title="Source Mac Address of Tunneled packet">
+        The source mac address of a tunneled packet.
+    </field>
+    <field id="MFF_TUN_ETH_DST" title="Destination Mac Address of Tunneled packet">
+        The source mac address of a tunneled packet.
+    </field>
+    <field id="MFF_TUN_VLAN_VID" title="Vlan Id of Tunneled packet">
+        The source mac address of a tunneled packet.
+    </field>
+    <field id="MFF_TUN_IN_PORT" title="Ingress port of Tunneled packet">
+        The source mac address of a tunneled packet.
+    </field>
+
     <h2>Geneve Fields</h2>
 
     <p>

@@ -443,7 +443,7 @@ type_run(const char *type)
                 }
 
                 iter->odp_port = node ? u32_to_odp(node->data) : ODPP_NONE;
-                if (tnl_port_reconfigure(iter, iter->up.netdev,
+                if (tnl_port_reconfigure(ofproto, iter, iter->up.netdev,
                                          iter->odp_port, old_odp_port,
                                          ovs_native_tunneling_is_on(ofproto), dp_port)) {
                     backer->need_revalidate = REV_RECONFIGURE;
@@ -2037,6 +2037,7 @@ port_construct(struct ofport *port_)
     struct ofproto_dpif *ofproto = ofproto_dpif_cast(port->up.ofproto);
     const struct netdev *netdev = port->up.netdev;
     char namebuf[NETDEV_VPORT_NAME_BUFSIZE];
+    const struct netdev_tunnel_config *tnl_cfg;
     const char *dp_port_name;
     struct dpif_port dpif_port;
     int error;
@@ -2076,15 +2077,25 @@ port_construct(struct ofport *port_)
 
     port->odp_port = dpif_port.port_no;
 
-    if (netdev_get_tunnel_config(netdev)) {
+    if ((tnl_cfg = netdev_get_tunnel_config(netdev)) != NULL) {
         atomic_count_inc(&ofproto->backer->tnl_count);
-        error = tnl_port_add(port, port->up.netdev, port->odp_port,
+        error = tnl_port_add(ofproto, port, port->up.netdev, port->odp_port,
                              ovs_native_tunneling_is_on(ofproto), dp_port_name);
         if (error) {
             atomic_count_dec(&ofproto->backer->tnl_count);
             dpif_port_destroy(&dpif_port);
             return error;
         }
+
+#if 0
+        if (eth_addr_is_zero(tnl_cfg->eth_src)) {
+            ovs_rwlock_wrlock(&ofproto->ml->rwlock);
+            mac_learning_insert(ofproto->ml, tnl_cfg->eth_src, tnl_cfg->vlan_id);
+            mac_learning_set_idle_time(ofproto->ml, INT_MAX);
+            ovs_rwlock_unlock(&ofproto->ml->rwlock);
+        }
+#endif
+        PRINTF("tnl_cfg %p", tnl_cfg);
 
         port->is_tunnel = true;
     } else {
@@ -2169,7 +2180,7 @@ port_destruct(struct ofport *port_, bool del)
         atomic_count_dec(&ofproto->backer->tnl_count);
     }
 
-    tnl_port_del(port, port->odp_port);
+    tnl_port_del(ofproto, port, port->odp_port);
     sset_find_and_delete(&ofproto->ports, devname);
     sset_find_and_delete(&ofproto->ghost_ports, devname);
     bundle_remove(port_);
@@ -2218,7 +2229,7 @@ port_modified(struct ofport *port_)
     if (port->is_tunnel) {
         struct ofproto_dpif *ofproto = ofproto_dpif_cast(port->up.ofproto);
 
-        if (tnl_port_reconfigure(port, netdev, port->odp_port, port->odp_port,
+        if (tnl_port_reconfigure(ofproto, port, netdev, port->odp_port, port->odp_port,
                                  ovs_native_tunneling_is_on(ofproto),
                                  dp_port_name)) {
             ofproto->backer->need_revalidate = REV_RECONFIGURE;
@@ -6541,6 +6552,62 @@ odp_port_by_name(const char *name)
                 &dpif_port)) {
             continue;
         }
+        return dpif_port.port_no;
+    }
+    return ODPP_NONE;
+}
+
+int
+ofproto_port_info_query_by_name(const char *name, odp_port_t *odp_port, ofp_port_t *ofp_port)
+{
+    struct ofproto_dpif *ofproto;
+    struct ofproto_port ofproto_port;
+    struct dpif_port dpif_port;
+
+    HMAP_FOR_EACH (ofproto, all_ofproto_dpifs_by_name_node,
+                   &all_ofproto_dpifs_by_name) {
+        if (dpif_port_query_by_name(ofproto->backer->dpif, name,
+                &dpif_port)) {
+            continue;
+        }
+
+        *odp_port = dpif_port.port_no;
+        dpif_port_destroy(&dpif_port);
+
+        if (ofproto_port_query_by_name(&ofproto->up, name, &ofproto_port)) {
+            return ODPP_NONE;
+        }
+
+        *ofp_port = ofproto_port.ofp_port;
+        ofproto_port_destroy(&ofproto_port);
+        return 0;
+    }
+    return ODPP_NONE;
+}
+#if 0
+{
+    struct ofproto_dpif *ofproto;
+    struct dpif_port dpif_port;
+
+    HMAP_FOR_EACH (ofproto, all_ofproto_dpifs_by_name_node,
+                   &all_ofproto_dpifs_by_name) {
+        if (dpif_port_query_by_name(ofproto->backer->dpif, name,
+                &dpif_port)) {
+            continue;
+        }
+        return dpif_port.port_no;
+    }
+    return ODPP_NONE;
+}
+#endif
+
+ofp_port_t
+ofp_port_by_name(const struct ofport_dpif *ofport, const char *name)
+{
+    struct dpif_port dpif_port;
+    struct ofproto_dpif *ofproto = ofproto_dpif_cast(ofport->up.ofproto);
+
+    if (!dpif_port_query_by_name(ofproto->backer->dpif, name, &dpif_port)) {
         return dpif_port.port_no;
     }
     return ODPP_NONE;

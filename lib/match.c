@@ -27,6 +27,15 @@
 #include "tun-metadata.h"
 #include "openvswitch/nsh.h"
 
+static void
+set_eth_masked(const struct eth_addr value_src,
+               const struct eth_addr mask_src,
+               struct eth_addr *value_dst, struct eth_addr *mask_dst);
+static void
+set_eth(const struct eth_addr value_src,
+        struct eth_addr *value_dst,
+        struct eth_addr *mask_dst);
+
 /* Converts the flow in 'flow' into a match in 'match', with the given
  * 'wildcards'. */
 void
@@ -400,6 +409,61 @@ void
 match_set_tun_gtpu_msgtype(struct match *match, uint8_t msgtype)
 {
     match_set_tun_gtpu_msgtype_masked(match, msgtype, UINT8_MAX);
+}
+
+void
+match_set_tun_src_mac_masked(struct match *match,
+                        const struct eth_addr dl_src,
+                        const struct eth_addr mask)
+{
+    set_eth_masked(dl_src, mask, &match->flow.tunnel.src_mac, &match->wc.masks.tunnel.src_mac);
+}
+
+void
+match_set_tun_src_mac(struct match *match, const struct eth_addr dl_src)
+{
+    set_eth(dl_src, &match->flow.tunnel.src_mac, &match->wc.masks.tunnel.src_mac);
+}
+
+void
+match_set_tun_dst_mac_masked(struct match *match,
+                        const struct eth_addr dl_dst,
+                        const struct eth_addr mask)
+{
+    set_eth_masked(dl_dst, mask, &match->flow.tunnel.dst_mac, &match->wc.masks.tunnel.dst_mac);
+}
+
+void
+match_set_tun_dst_mac(struct match *match, const struct eth_addr dl_dst)
+{
+    set_eth(dl_dst, &match->flow.tunnel.dst_mac, &match->wc.masks.tunnel.dst_mac);
+}
+
+void
+match_set_tun_vlan_vid(struct match *match, ovs_be16 vid)
+{
+    match_set_vlan_vid_masked(match, vid, htons(VLAN_VID_MASK | VLAN_CFI));
+}
+
+
+void
+match_set_tun_vlan_vid_masked(struct match *match, ovs_be16 vid, ovs_be16 mask)
+{
+    match->wc.masks.tunnel.vlan_id = vid;
+    match->flow.tunnel.vlan_id = mask & vid;
+}
+
+void
+match_set_tun_in_port(struct match *match, ovs_be32 odp_port)
+{
+    match_set_tun_in_port_masked(match, odp_port, OVS_BE32_MAX);
+}
+
+void
+match_set_tun_in_port_masked(struct match *match, ovs_be32 odp_port, ovs_be32 mask)
+{
+    match->wc.masks.tunnel.out_odp_port = mask;
+    match->flow.tunnel.out_odp_port = odp_port & mask;
 }
 
 void
