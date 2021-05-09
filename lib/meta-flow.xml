@@ -1877,16 +1877,17 @@ ovs-ofctl add-flow br-int 'in_port=3,tun_src=192.168.1.1,tun_id=5001 actions=1'
     </field>
 
     <field id="MFF_TUN_ETH_SRC" title="Source Mac Address of Tunneled packet">
-        The source mac address of a tunneled packet.
+        The source mac address of tunneled packet.
     </field>
     <field id="MFF_TUN_ETH_DST" title="Destination Mac Address of Tunneled packet">
-        The source mac address of a tunneled packet.
+        The source mac address of tunneled packet.
     </field>
-    <field id="MFF_TUN_VLAN_VID" title="Vlan Id of Tunneled packet">
-        The source mac address of a tunneled packet.
+    <field id="MFF_TUN_VLAN_ID" title="Vlan Id of Tunneled packet">
+        The vlan id in tunneled packet.
     </field>
-    <field id="MFF_TUN_IN_PORT" title="Ingress port of Tunneled packet">
-        The source mac address of a tunneled packet.
+    <field id="MFF_TUN_DL_PORT" title="Datalink port of Tunneled packet">
+        The datalink port on whuch tunnelled packet has ingress on or to
+        be egress out of.
     </field>
 
     <h2>Geneve Fields</h2>

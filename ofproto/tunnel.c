@@ -50,9 +50,9 @@ struct tnl_match {
     bool in_key_flow;
     bool ip_src_flow;
     bool ip_dst_flow;
-    bool out_port_flow;
+    bool dl_port_flow;
     bool vlan_id_flow;
-    ovs_be32 out_odp_port;
+    ovs_be32 dl_odp_port;
     ovs_be16 vlan_id;
     enum netdev_pt_mode pt_mode;
 };
@@ -66,7 +66,7 @@ struct tnl_port {
     struct netdev *netdev;
 
     struct tnl_match match;
-    ovs_be32 out_ofp_port;
+    ovs_be32 dl_ofp_port;
 };
 
 struct tnl_smac_entry {
@@ -193,12 +193,12 @@ tnl_port_add__(const struct ofproto_dpif *ofproto OVS_UNUSED, const struct ofpor
     tnl_port->match.in_key_flow = cfg->in_key_flow;
     tnl_port->match.pt_mode = netdev_get_pt_mode(netdev);
 
-    tnl_port->match.out_port_flow = cfg->out_port_flow;
+    tnl_port->match.dl_port_flow = cfg->dl_port_flow;
     tnl_port->match.vlan_id_flow = cfg->vlan_id_flow;
     tnl_port->match.odp_port = odp_port;
-    if (cfg->out_port_name) {
-        if (ofproto_port_info_query_by_name(cfg->out_port_name,
-                    &tnl_port->match.out_odp_port, &tnl_port->out_ofp_port)) {
+    if (cfg->dl_port_name) {
+        if (ofproto_port_info_query_by_name(cfg->dl_port_name,
+                    &tnl_port->match.dl_odp_port, &tnl_port->dl_ofp_port)) {
             netdev_close(tnl_port->netdev);
             free(tnl_port);
             return false;
@@ -239,7 +239,7 @@ tnl_port_add__(const struct ofproto_dpif *ofproto OVS_UNUSED, const struct ofpor
         type = netdev_get_type(netdev);
         /* If user specified entire L2 and L3 encap parameters then program the
          * tnl_port_map with the information user provided */
-        if (tnl_port->match.out_odp_port || tnl_port->match.out_port_flow) {
+        if (tnl_port->match.dl_odp_port || tnl_port->match.dl_port_flow) {
             tnl_port_map_insert_by_ip(odp_port, cfg->src_mac,
                     &tnl_port->match.ipv6_src, cfg->dst_port, name, type);
         } else {
@@ -323,7 +323,7 @@ tnl_port_del__(const struct ofproto_dpif *ofproto,
 
         type = netdev_get_type(tnl_port->netdev);
 
-        if (tnl_port->match.out_odp_port) {
+        if (tnl_port->match.dl_odp_port) {
             tnl_port_map_delete_by_ip(odp_port, cfg->src_mac,
                     &tnl_port->match.ipv6_src, cfg->dst_port, type);
         } else {
@@ -372,7 +372,7 @@ tnl_port_receive(const struct flow *flow) OVS_EXCLUDED(rwlock)
     {
 #if 1
         char *s = flow_to_string(flow, NULL);
-        PRINTF("out_port %d, flow: %s", flow->tunnel.out_odp_port, s);
+        PRINTF("dl_port %d, flow: %s", flow->tunnel.dl_port, s);
         free(s);
 #endif
     }
@@ -554,18 +554,16 @@ tnl_port_send(const struct ofport_dpif *ofport, struct flow *flow,
         flow->tunnel.erspan_hwid = cfg->erspan_hwid;
     }
 
-    if (!cfg->out_port_flow) {
-        flow->tunnel.out_odp_port = tnl_port->out_ofp_port;
-        wc->masks.tunnel.out_odp_port = OVS_BE32_MAX;
+    if (!cfg->dl_port_flow) {
+        flow->tunnel.dl_port = tnl_port->dl_ofp_port;
+        wc->masks.tunnel.dl_port = OVS_BE32_MAX;
 
-        if (!cfg->src_mac_flow) {
-            wc->masks.tunnel.src_mac = eth_addr_exact;
-            flow->tunnel.src_mac = cfg->src_mac;
-        }
+        wc->masks.tunnel.eth_src = eth_addr_exact;
+        flow->tunnel.eth_src = cfg->src_mac;
 
         if (!cfg->dst_mac_flow) {
-            wc->masks.tunnel.dst_mac = eth_addr_exact;
-            flow->tunnel.dst_mac = cfg->dst_mac;
+            wc->masks.tunnel.eth_dst = eth_addr_exact;
+            flow->tunnel.eth_dst = cfg->dst_mac;
         }
         if (!cfg->vlan_id_flow) {
             flow->tunnel.vlan_id = (OVS_FORCE ovs_be16)cfg->vlan_id;
@@ -640,13 +638,13 @@ tnl_find_exact(struct tnl_match *match, struct hmap *map)
 static struct tnl_port *
 tnl_find(const struct flow *flow) OVS_REQ_RDLOCK(rwlock)
 {
-    enum match_type ip_src, out_odp_port, vlan_id;
+    enum match_type ip_src, dl_odp_port, vlan_id;
     int in_key_flow;
     int ip_dst_flow;
     int i;
 
     i = 0;
-    for (out_odp_port = 0; out_odp_port < 3; out_odp_port++) {
+    for (dl_odp_port = 0; dl_odp_port < 3; dl_odp_port++) {
         for (vlan_id = 0; vlan_id < 3; vlan_id++) {
             for (in_key_flow = 0; in_key_flow < 2; in_key_flow++) {
                 for (ip_dst_flow = 0; ip_dst_flow < 2; ip_dst_flow++) {
@@ -658,7 +656,7 @@ tnl_find(const struct flow *flow) OVS_REQ_RDLOCK(rwlock)
                             struct tnl_match match;
 
                             PRINTF("Bucket: {%d,%d,%d,%d,%d}",
-                                    out_odp_port, vlan_id, in_key_flow, ip_dst_flow, ip_src);
+                                    dl_odp_port, vlan_id, in_key_flow, ip_dst_flow, ip_src);
 
                             memset(&match, 0, sizeof match);
 
@@ -682,8 +680,8 @@ tnl_find(const struct flow *flow) OVS_REQ_RDLOCK(rwlock)
                             match.vlan_id_flow = vlan_id == MATCH_FLOW;
                             match.vlan_id = (vlan_id == MATCH_CFG) ? flow->tunnel.vlan_id : 0;
 
-                            match.out_port_flow = out_odp_port == MATCH_FLOW;
-                            match.out_odp_port = (out_odp_port == MATCH_CFG) ? flow->tunnel.out_odp_port : 0;
+                            match.dl_port_flow = dl_odp_port == MATCH_FLOW;
+                            match.dl_odp_port = (dl_odp_port == MATCH_CFG) ? flow->tunnel.dl_port : 0;
 
                             /* Look for a legacy L2 or L3 tunnel port first. */
                             if (pt_ns(flow->packet_type) == OFPHTN_ETHERTYPE) {
@@ -719,25 +717,25 @@ tnl_find(const struct flow *flow) OVS_REQ_RDLOCK(rwlock)
 static struct hmap **
 tnl_match_map(const struct tnl_match *m)
 {
-    enum match_type ip_src, out_odp_port, vlan_id;
+    enum match_type ip_src, dl_odp_port, vlan_id;
 
     ip_src = (m->ip_src_flow ? MATCH_FLOW
               : ipv6_addr_is_set(&m->ipv6_src) ? MATCH_CFG
               : MATCH_ANY);
 
-    out_odp_port = (m->out_port_flow ? MATCH_FLOW
-              : m->out_odp_port ? MATCH_CFG
+    dl_odp_port = (m->dl_port_flow ? MATCH_FLOW
+              : m->dl_odp_port ? MATCH_CFG
               : MATCH_ANY);
 
     vlan_id = (m->vlan_id_flow ? MATCH_FLOW
               : m->vlan_id ? MATCH_CFG
               : MATCH_ANY);
 
-    PRINTF("tnl_match_map: {%d,%d,%d,%d,%d}", out_odp_port, vlan_id,
+    PRINTF("tnl_match_map: {%d,%d,%d,%d,%d}", dl_odp_port, vlan_id,
             m->in_key_flow, m->ip_dst_flow, ip_src);
 
     return &tnl_match_maps[
-        36 * out_odp_port +
+        36 * dl_odp_port +
         12 * vlan_id + 
         6 * m->in_key_flow + 3 * m->ip_dst_flow + ip_src];
 }
@@ -748,7 +746,7 @@ tnl_smac_add(const struct ofproto_dpif *ofproto,
 {
     struct tnl_smac_entry entry, *pEntry;
 
-    if (!cfg->out_port_name || cfg->vlan_id_flow) {
+    if (!cfg->dl_port_name || cfg->vlan_id_flow) {
         return;
     }
 
@@ -777,7 +775,7 @@ tnl_smac_delete(const struct ofproto_dpif *ofproto,
     struct tnl_smac_entry entry, *pEntry = NULL;
 
     /* If tunnel has l2 specification proceed */
-    if (!cfg->out_port_name || cfg->vlan_id_flow) {
+    if (!cfg->dl_port_name || cfg->vlan_id_flow) {
         return;
     }
 
@@ -831,10 +829,10 @@ tnl_match_fmt(const struct tnl_match *match, struct ds *ds)
     } else if (match->vlan_id) {
         ds_put_format(ds, ", vlan_id=%#"PRIx16, match->vlan_id);
     }
-    if (match->out_port_flow) {
+    if (match->dl_port_flow) {
         ds_put_format(ds, ", out_port=flow");
-    } else if (match->out_odp_port) {
-        ds_put_format(ds, ", out_port=%"PRIu32, match->out_odp_port);
+    } else if (match->dl_odp_port) {
+        ds_put_format(ds, ", out_port=%"PRIu32, match->dl_odp_port);
     }
 }
 

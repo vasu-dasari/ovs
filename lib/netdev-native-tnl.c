@@ -295,7 +295,7 @@ eth_build_header(struct ovs_action_push_tnl *data,
     /* If this is fully specified tunnel and user configured the tunnel to
      * go over a vlan, add the vlan_header with tpid of ETH_TYPE_VLAN_8021Q
      * and vlan_pcp 0 */
-    if ((params->flow->tunnel.out_odp_port) &&
+    if ((params->flow->tunnel.dl_port) &&
             (params->flow->tunnel.vlan_id)) {
         struct vlan_header *vlan = (struct vlan_header *)(eth + 1);
 

@@ -7804,17 +7804,17 @@ dp_execute_cb(void *aux_, struct dp_packet_batch *packets_,
                     /* Save ingress port and ingress vlan to flow_tnl to be
                      * used for classifying packets over fully specified
                      * tunnels */
-                    packet->md.tunnel.src_mac = aux->flow->dl_src;
-                    packet->md.tunnel.dst_mac = aux->flow->dl_dst;
-                    packet->md.tunnel.out_odp_port =
+                    packet->md.tunnel.eth_src = aux->flow->dl_src;
+                    packet->md.tunnel.eth_src = aux->flow->dl_dst;
+                    packet->md.tunnel.dl_port =
                         (OVS_FORCE ovs_be32)(aux->flow->in_port.odp_port);
                     if (aux->flow->vlans[0].tci) {
                         packet->md.tunnel.vlan_id =
                             (OVS_FORCE ovs_be16)vlan_tci_to_vid((aux->flow->vlans[0].tci));
                    }
-                    PRINTF("populating out_odp_port %d", packet->md.tunnel.out_odp_port);
+                    PRINTF("populating dl_port %d", packet->md.tunnel.dl_port);
 
-                    // packet->md.tunnel.out_odp_port = ntohl( packet->md.tunnel.out_odp_port);
+                    // packet->md.tunnel.dl_port = ntohl( packet->md.tunnel.dl_port);
                     // packet->md.tunnel.vlan_id = ntohs( packet->md.tunnel.vlan_id);
                 }
 

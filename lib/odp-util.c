@@ -2688,7 +2688,7 @@ static const struct attr_len_tbl ovs_tun_key_attr_lens[OVS_TUNNEL_KEY_ATTR_MAX +
     [OVS_TUNNEL_KEY_ATTR_IPV6_DST]      = { .len = 16 },
     [OVS_TUNNEL_KEY_ATTR_ERSPAN_OPTS]   = { .len = ATTR_LEN_VARIABLE },
     [OVS_TUNNEL_KEY_ATTR_GTPU_OPTS]   = { .len = ATTR_LEN_VARIABLE },
-    [OVS_TUNNEL_KEY_ATTR_OUT_PORT]      = { .len = 4 },
+    [OVS_TUNNEL_KEY_ATTR_DL_PORT]       = { .len = 4 },
     [OVS_TUNNEL_KEY_ATTR_ETH_SRC]       = { .len = 6 },
     [OVS_TUNNEL_KEY_ATTR_ETH_DST]       = { .len = 6 },
     [OVS_TUNNEL_KEY_ATTR_VLAN_ID]       = { .len = 2 },
@@ -3104,14 +3104,14 @@ odp_tun_key_from_attr__(const struct nlattr *attr, bool is_mask,
             tun->gtpu_msgtype = opts->msgtype;
             break;
         }
-        case OVS_TUNNEL_KEY_ATTR_OUT_PORT:
-            tun->out_odp_port = (OVS_FORCE ovs_be32)odp_to_u32(nl_attr_get_odp_port(a));
+        case OVS_TUNNEL_KEY_ATTR_DL_PORT:
+            tun->dl_port = (OVS_FORCE ovs_be32)odp_to_u32(nl_attr_get_odp_port(a));
             break;
         case OVS_TUNNEL_KEY_ATTR_ETH_SRC:
-            tun->src_mac = nl_attr_get_eth_addr(a);
+            tun->eth_src = nl_attr_get_eth_addr(a);
             break;
         case OVS_TUNNEL_KEY_ATTR_ETH_DST:
-            tun->dst_mac = nl_attr_get_eth_addr(a);
+            tun->eth_dst = nl_attr_get_eth_addr(a);
             break;
         case OVS_TUNNEL_KEY_ATTR_VLAN_ID:
             tun->vlan_id = nl_attr_get_be16(a);
@@ -3238,17 +3238,17 @@ tun_key_to_attr(struct ofpbuf *a, const struct flow_tnl *tun_key,
         nl_msg_put_unspec(a, OVS_TUNNEL_KEY_ATTR_GENEVE_OPTS,
                           &opts, sizeof(opts));
     }
-    if (tun_key->out_odp_port) {
-        nl_msg_put_be32(a, OVS_TUNNEL_KEY_ATTR_OUT_PORT,
-                tun_key->out_odp_port);
+    if (tun_key->dl_port) {
+        nl_msg_put_be32(a, OVS_TUNNEL_KEY_ATTR_DL_PORT,
+                tun_key->dl_port);
     }
-    if (!eth_addr_is_zero(tun_key->src_mac)) {
-        nl_msg_put_unspec(a, OVS_TUNNEL_KEY_ATTR_ETH_SRC, &tun_key->src_mac,
-                sizeof(tun_key->src_mac));
+    if (!eth_addr_is_zero(tun_key->eth_src)) {
+        nl_msg_put_unspec(a, OVS_TUNNEL_KEY_ATTR_ETH_SRC, &tun_key->eth_src,
+                sizeof(tun_key->eth_src));
     }
-    if (!eth_addr_is_zero(tun_key->dst_mac)) {
-        nl_msg_put_unspec(a, OVS_TUNNEL_KEY_ATTR_ETH_DST, &tun_key->dst_mac,
-                sizeof(tun_key->dst_mac));
+    if (!eth_addr_is_zero(tun_key->eth_dst)) {
+        nl_msg_put_unspec(a, OVS_TUNNEL_KEY_ATTR_ETH_DST, &tun_key->eth_dst,
+                sizeof(tun_key->eth_dst));
     }
     if (tun_key->vlan_id) {
         nl_msg_put_be16(a, OVS_TUNNEL_KEY_ATTR_VLAN_ID, tun_key->vlan_id);
@@ -4039,7 +4039,7 @@ format_odp_tun_attr(const struct nlattr *attr, const struct nlattr *mask_attr,
             format_odp_tun_gtpu_opt(a, ma, ds, verbose);
             ds_put_cstr(ds, "),");
             break;
-        case OVS_TUNNEL_KEY_ATTR_OUT_PORT:
+        case OVS_TUNNEL_KEY_ATTR_DL_PORT:
             format_be32(ds, "out_port", nl_attr_get_be32(a),
                     ma ? nl_attr_get(ma) : NULL, verbose);
             break;

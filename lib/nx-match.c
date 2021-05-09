@@ -1203,16 +1203,16 @@ nx_put_raw(struct ofpbuf *b, enum ofp_version oxm, const struct match *match,
                match->wc.masks.tunnel.gtpu_msgtype);
 
     /* L2 Encapsulation */
-    nxm_put_32m(&ctx, MFF_TUN_IN_PORT, oxm,
-                htonl(flow->tunnel.out_odp_port),
-                htonl(match->wc.masks.tunnel.out_odp_port));
-    nxm_put_16m(&ctx, MFF_TUN_VLAN_VID, oxm,
+    nxm_put_32m(&ctx, MFF_TUN_DL_PORT, oxm,
+                htonl(flow->tunnel.dl_port),
+                htonl(match->wc.masks.tunnel.dl_port));
+    nxm_put_16m(&ctx, MFF_TUN_VLAN_ID, oxm,
                 htons(flow->tunnel.vlan_id),
                 htons(match->wc.masks.tunnel.vlan_id));
     nxm_put_eth_masked(&ctx, MFF_TUN_ETH_SRC, oxm,
-                flow->tunnel.src_mac, match->wc.masks.tunnel.src_mac);
+                flow->tunnel.eth_src, match->wc.masks.tunnel.eth_src);
     nxm_put_eth_masked(&ctx, MFF_TUN_ETH_DST, oxm,
-                flow->tunnel.dst_mac, match->wc.masks.tunnel.dst_mac);
+                flow->tunnel.eth_dst, match->wc.masks.tunnel.eth_dst);
 
     /* Network Service Header */
     nxm_put_8m(&ctx, MFF_NSH_FLAGS, oxm, flow->nsh.flags,

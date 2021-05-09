@@ -80,7 +80,7 @@ static void nxm_init(void);
 //{
 //#if 0
 //    char *s = flow_to_string(flow, NULL);
-//    PRINTF("out_port %d, flow: %s", flow->tunnel.out_odp_port, s);
+//    PRINTF("out_port %d, flow: %s", flow->tunnel.dl_port, s);
 //    free(s);
 //#endif
 //}
@@ -406,13 +406,13 @@ mf_is_all_wild(const struct mf_field *mf, const struct flow_wildcards *wc)
         return !wc->masks.tunnel.gtpu_msgtype;
 
     case MFF_TUN_ETH_SRC:
-        return eth_addr_is_zero(wc->masks.tunnel.src_mac);
+        return eth_addr_is_zero(wc->masks.tunnel.eth_src);
     case MFF_TUN_ETH_DST:
-        return eth_addr_is_zero(wc->masks.tunnel.dst_mac);
-    case MFF_TUN_VLAN_VID:
+        return eth_addr_is_zero(wc->masks.tunnel.eth_dst);
+    case MFF_TUN_VLAN_ID:
         return !wc->masks.tunnel.vlan_id;
-    case MFF_TUN_IN_PORT:
-        return !wc->masks.tunnel.out_odp_port;
+    case MFF_TUN_DL_PORT:
+        return !wc->masks.tunnel.dl_port;
 
     case MFF_N_IDS:
     default:
@@ -556,8 +556,8 @@ mf_is_value_valid(const struct mf_field *mf, const union mf_value *value)
     case MFF_TUN_GTPU_MSGTYPE:
     case MFF_TUN_ETH_SRC:
     case MFF_TUN_ETH_DST:
-    case MFF_TUN_VLAN_VID:
-    case MFF_TUN_IN_PORT:
+    case MFF_TUN_VLAN_ID:
+    case MFF_TUN_DL_PORT:
     CASE_MFF_TUN_METADATA:
     case MFF_METADATA:
     case MFF_IN_PORT:
@@ -746,16 +746,16 @@ mf_get_value(const struct mf_field *mf, const struct flow *flow,
         value->u8 = flow->tunnel.gtpu_msgtype;
         break;
     case MFF_TUN_ETH_SRC:
-        value->mac = flow->tunnel.src_mac;
+        value->mac = flow->tunnel.eth_src;
         break;
     case MFF_TUN_ETH_DST:
-        value->mac = flow->tunnel.dst_mac;
+        value->mac = flow->tunnel.eth_dst;
         break;
-    case MFF_TUN_VLAN_VID:
+    case MFF_TUN_VLAN_ID:
         value->be16 = htons(flow->tunnel.vlan_id);
         break;
-    case MFF_TUN_IN_PORT:
-        value->be32 = htonl(flow->tunnel.out_odp_port);
+    case MFF_TUN_DL_PORT:
+        value->be32 = htonl(flow->tunnel.dl_port);
         break;
     CASE_MFF_TUN_METADATA:
         tun_metadata_read(&flow->tunnel, mf, value);
@@ -1095,16 +1095,16 @@ mf_set_value(const struct mf_field *mf,
         match_set_tun_gtpu_msgtype(match, value->u8);
         break;
     case MFF_TUN_ETH_SRC:
-        match_set_tun_src_mac(match, value->mac);
+        match_set_tun_eth_src(match, value->mac);
         break;
     case MFF_TUN_ETH_DST:
-        match_set_tun_dst_mac(match, value->mac);
+        match_set_tun_eth_dst(match, value->mac);
         break;
-    case MFF_TUN_VLAN_VID:
-        match_set_tun_vlan_vid(match, ntohs(value->be16));
+    case MFF_TUN_VLAN_ID:
+        match_set_tun_vlan_id(match, ntohs(value->be16));
         break;
-    case MFF_TUN_IN_PORT:
-        match_set_tun_in_port(match, ntohl(value->be32));
+    case MFF_TUN_DL_PORT:
+        match_set_tun_dl_port(match, ntohl(value->be32));
         break;
     CASE_MFF_TUN_METADATA:
         tun_metadata_set_match(mf, value, NULL, match, err_str);
@@ -1530,16 +1530,16 @@ mf_set_flow_value(const struct mf_field *mf,
         flow->tunnel.gtpu_msgtype = value->u8;
         break;
     case MFF_TUN_ETH_SRC:
-        flow->tunnel.src_mac = value->mac;
+        flow->tunnel.eth_src = value->mac;
         break;
     case MFF_TUN_ETH_DST:
-        flow->tunnel.dst_mac = value->mac;
+        flow->tunnel.eth_dst = value->mac;
         break;
-    case MFF_TUN_VLAN_VID:
+    case MFF_TUN_VLAN_ID:
         flow->tunnel.vlan_id = ntohs(value->be16);
         break;
-    case MFF_TUN_IN_PORT:
-        flow->tunnel.out_odp_port = ntohl(value->be32);
+    case MFF_TUN_DL_PORT:
+        flow->tunnel.dl_port = ntohl(value->be32);
         break;
     CASE_MFF_TUN_METADATA:
         tun_metadata_write(&flow->tunnel, mf, value);
@@ -1866,8 +1866,8 @@ mf_is_pipeline_field(const struct mf_field *mf)
     case MFF_TUN_GTPU_MSGTYPE:
     case MFF_TUN_ETH_SRC:
     case MFF_TUN_ETH_DST:
-    case MFF_TUN_VLAN_VID:
-    case MFF_TUN_IN_PORT:
+    case MFF_TUN_VLAN_ID:
+    case MFF_TUN_DL_PORT:
     CASE_MFF_TUN_METADATA:
     case MFF_METADATA:
     case MFF_IN_PORT:
@@ -2065,18 +2065,18 @@ mf_set_wild(const struct mf_field *mf, struct match *match, char **err_str)
         match_set_tun_gtpu_msgtype_masked(match, 0, 0);
         break;
     case MFF_TUN_ETH_SRC:
-        match->flow.tunnel.src_mac = eth_addr_zero;
-        match->wc.masks.tunnel.src_mac = eth_addr_zero;
+        match->flow.tunnel.eth_src = eth_addr_zero;
+        match->wc.masks.tunnel.eth_src = eth_addr_zero;
         break;
     case MFF_TUN_ETH_DST:
-        match->flow.tunnel.dst_mac = eth_addr_zero;
-        match->wc.masks.tunnel.dst_mac = eth_addr_zero;
+        match->flow.tunnel.eth_dst = eth_addr_zero;
+        match->wc.masks.tunnel.eth_dst = eth_addr_zero;
         break;
-    case MFF_TUN_VLAN_VID:
-        match_set_tun_vlan_vid_masked(match, 0, 0);
+    case MFF_TUN_VLAN_ID:
+        match_set_tun_vlan_id_masked(match, 0, 0);
         break;
-    case MFF_TUN_IN_PORT:
-        match_set_tun_in_port_masked(match, 0, 0);
+    case MFF_TUN_DL_PORT:
+        match_set_tun_dl_port_masked(match, 0, 0);
         break;
     CASE_MFF_TUN_METADATA:
         tun_metadata_set_match(mf, NULL, NULL, match, err_str);
@@ -2486,16 +2486,16 @@ mf_set(const struct mf_field *mf,
         match_set_tun_gtpu_msgtype_masked(match, value->u8, mask->u8);
         break;
     case MFF_TUN_ETH_SRC:
-        match_set_tun_src_mac_masked(match, value->mac, mask->mac);
+        match_set_tun_eth_src_masked(match, value->mac, mask->mac);
         break;
     case MFF_TUN_ETH_DST:
-        match_set_tun_dst_mac_masked(match, value->mac, mask->mac);
+        match_set_tun_eth_dst_masked(match, value->mac, mask->mac);
         break;
-    case MFF_TUN_VLAN_VID:
-        match_set_tun_vlan_vid_masked(match, ntohs(value->be16), ntohs(mask->be16));
+    case MFF_TUN_VLAN_ID:
+        match_set_tun_vlan_id_masked(match, ntohs(value->be16), ntohs(mask->be16));
         break;
-    case MFF_TUN_IN_PORT:
-        match_set_tun_in_port_masked(match, value->be32, mask->be32);
+    case MFF_TUN_DL_PORT:
+        match_set_tun_dl_port_masked(match, value->be32, mask->be32);
         break;
     CASE_MFF_TUN_METADATA:
         tun_metadata_set_match(mf, value, mask, match, err_str);
