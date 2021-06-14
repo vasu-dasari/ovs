@@ -46,6 +46,9 @@ v2.16.0 - 16 Aug 2021
        processing database updates.
    - In ovs-vsctl and vtep-ctl, the "find" command now accept new
      operators {in} and {not-in}.
+   - OpenFlow:
+     * Extend Flow Monitoring support for OpenFlow 1.0-1.2 with Nicira
+       Extensions
    - Userspace datapath:
      * Auto load balancing of PMDs now partially supports cross-NUMA polling
        cases, e.g if all PMD threads are running on the same NUMA node.
