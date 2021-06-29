@@ -159,6 +159,11 @@ If \fIbridge\fR is not specified, then displays detailed information about all
 bridges with RSTP enabled.
 .SS "BRIDGE COMMANDS"
 These commands manage bridges.
+.IP "\fBfdb/add\fR \fIbridge\fR \fIport\fR \fIvlan\fR \fImac\fR"
+.IQ "\fBfdb/del\fR \fIbridge\fR \fIport\fR \fIvlan\fR \fImac\fR"
+Adds/deletes \fImac\fR address on a \fIbridge\fR to/from \fIport\fR and
+\fIvlan\fR. This utility is can be used to pre-populate fdb table without
+relying on dynamic mac learning.
 .IP "\fBfdb/flush\fR [\fIbridge\fR]"
 Flushes \fIbridge\fR MAC address learning table, or all learning tables
 if no \fIbridge\fR is given.
