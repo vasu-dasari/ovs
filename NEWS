@@ -47,8 +47,10 @@ v2.16.0 - 16 Aug 2021
    - In ovs-vsctl and vtep-ctl, the "find" command now accept new
      operators {in} and {not-in}.
    - OpenFlow:
-     * Extend Flow Monitoring support for OpenFlow 1.0-1.2 with Nicira
-       Extensions
+     * Extended Flow Monitoring support for all supported OpenFlow versions
+         OpenFlow versions 1.0-1.2 with Nicira Extensions
+         OpenFlow versions 1.3 with Open Network Foundation extension
+         OpenFlow versions 1.4+, as defined in the OpenFlow specification
    - Userspace datapath:
      * Auto load balancing of PMDs now partially supports cross-NUMA polling
        cases, e.g if all PMD threads are running on the same NUMA node.
